@@ -1,3 +1,5 @@
 *.iml
 */target/*
-workspace.xml
+/.idea
+*/.idea
+.DS_Store
