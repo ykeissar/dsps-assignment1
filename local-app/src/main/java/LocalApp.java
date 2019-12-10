@@ -16,13 +16,12 @@ import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.CreateQueueRequest;
+import com.amazonaws.services.sqs.model.Message;
 import com.amazonaws.services.sqs.model.ReceiveMessageRequest;
 import com.amazonaws.services.sqs.model.SendMessageRequest;
-import com.amazonaws.services.sqs.model.Message;
 import org.apache.commons.codec.binary.Base64;
 
 import java.io.*;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
