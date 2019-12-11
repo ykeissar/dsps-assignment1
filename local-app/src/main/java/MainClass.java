@@ -36,7 +36,7 @@ public class MainClass {
                 inWork.put(index, inputKey);
 
                 //sending message to the queue with input location
-                myApp.sendMessage(String.format("Input location: Bucket name - %s, Key - %s", myApp.getBucketName(), inputKey));
+                myApp.sendMessage(String.format("Input_location-Bucket_name %s Key %s", myApp.getBucketName(), inputKey));
             }
 
             //main loop, work until all works are done.
