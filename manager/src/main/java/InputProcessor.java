@@ -1,3 +1,4 @@
+import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
@@ -19,20 +20,26 @@ public class InputProcessor implements Runnable {
 
     public void run() {
         try {
-            List<JSONObject> list = new ArrayList<JSONObject>();
+            List<JSONArray> list = new ArrayList<JSONArray>();
             JSONParser parser = new JSONParser();
-
             BufferedReader br = new BufferedReader(new StringReader(input));
-            for (String line; (line = br.readLine()) != null; ) {
-                list.add((JSONObject) parser.parse(line));
-            }
 
-            //setup numOfMessages/n workers in a pool
+            for (String line; (line = br.readLine()) != null; ) {
+                JSONObject obj2 = (JSONObject) parser.parse(line);
+                JSONArray reviews = (JSONArray) obj2.get("reviews");
+                list.add(reviews);
+            }
             String url = manager.createQueue();
 
+            //put all messages in queue
+            for(JSONArray array:list){
+                for(Object obj:array){
+                    manager.sendMessage("UNPROCESSED\n"+obj.toString(),url);// check if correct to do this like this, wont stop manager.
+                                                                                     // outputs first line is 'UNPROCESSED'.
+                }
+            }
 
-
-
+            manager.addWorkingQueue(url);
 
         } catch (Exception e) {
             System.out.println(e.getMessage());

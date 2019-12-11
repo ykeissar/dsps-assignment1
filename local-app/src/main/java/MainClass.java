@@ -62,4 +62,7 @@ public class MainClass {
         }
 
     }
+
+    //TODO GENERAL - unify all message formats.
+    //TODO GENERAL -
 }
