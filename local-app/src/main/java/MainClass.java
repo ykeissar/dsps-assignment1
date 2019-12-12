@@ -11,7 +11,7 @@ public class MainClass {
     public static void main(String[] args) throws Exception {
         LocalApp myApp = new LocalApp();
         boolean terminateManager = args.length % 2 == 0;
-        int nWorkers = terminateManager ? Integer.parseInt(args[args.length - 2]) : Integer.parseInt(args[args.length - 1]);
+        int workerMessageRatio = terminateManager ? Integer.parseInt(args[args.length - 2]) : Integer.parseInt(args[args.length - 1]);
         List<String> inputs = new ArrayList<String>();
         List<String> outputs = new ArrayList<String>();
         Map<Integer, String> inWork = new HashMap<Integer, String>();

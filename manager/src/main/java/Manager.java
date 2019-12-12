@@ -1,6 +1,7 @@
 import com.amazonaws.auth.AWSCredentials;
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.InstanceProfileCredentialsProvider;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
@@ -10,6 +11,7 @@ import com.amazonaws.services.ec2.model.RunInstancesRequest;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.sqs.AmazonSQS;
@@ -24,12 +26,9 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 
 import java.io.*;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
 
 public class Manager {
     private AmazonS3 s3;
@@ -38,13 +37,13 @@ public class Manager {
     private AmazonSQS sqs;
     private String localAppQueueUrl = null; //TODO fix how to get that url, many local-app same queue?
     private boolean terminate = false;
-    private ExecutorService pool = Executors.newCachedThreadPool();
-    private List<String> workingQueues = new ArrayList<String>();
-    private List<ExecutorService> outputPools = new ArrayList<ExecutorService>();
-    private List<String> outputsContents = new ArrayList<String>();
+    private ExecutorService inputReadingPool = Executors.newCachedThreadPool();
+    private ExecutorService outputReadingPool = Executors.newCachedThreadPool();
 
-    public Manager(AWSCredentials credentials) {
-        credentialsProvider = new AWSStaticCredentialsProvider(credentials);//TODO fix how to get credentials
+    private Map<Integer,String> inputBuckets = new HashMap<Integer, String>();
+    private int id=0;
+    public Manager() {
+        credentialsProvider = new InstanceProfileCredentialsProvider(false);//TODO fix how to get credentials
 
         s3 = AmazonS3ClientBuilder.standard()
                 .withCredentials(credentialsProvider)
@@ -70,26 +69,27 @@ public class Manager {
         return localAppQueueUrl;
     }
 
-    public void processInput(String input) {
-        pool.execute(new InputProcessor(input, 5, this));//change int
+    public void processInput(String input,int id) {
+        inputReadingPool.execute(new InputProcessor(input, this,id));
     }
 
-    public void processOutput(String queueUrl) {
-        ExecutorService outputPool = Executors.newCachedThreadPool();
-        outputPools.add(outputPool);
-        String output = "";
-        outputPool.execute(new OutputProcessor(queueUrl, this, output));
-
+    public int insertToInputBuckets(String bucketName){
+        inputBuckets.put(id,bucketName);
+        id++;
+        return id;
     }
 
-    public void addWorkingQueue(String queueUrl) {
-        workingQueues.add(queueUrl);
-        processOutput(queueUrl);
+    public String getBucketName(int id){
+        return inputBuckets.get(id);
+    }
+
+    public void processOutput(String queueUrl,int id) {
+        outputReadingPool.execute(new OutputHandler(queueUrl,this,id));
     }
 
     //----------------------------------EC2---------------------------------
-    public List<Instance> runNWorkers(int n, String queueUrl) {
-        RunInstancesRequest request = new RunInstancesRequest("ami-0c5204531f799e0c6", n, n);
+    public List<Instance> runNWorkers(String queueUrl) {
+        RunInstancesRequest request = new RunInstancesRequest("ami-0c5204531f799e0c6", 1, 1);//TODO fix ammount
         request.setInstanceType(InstanceType.T1Micro.toString());
         String bootstrapManager = "#!$ cd /opt\n" +
                 "$ sudo wget --no-cookies --no-check-certificate --header \"Cookie: %3A%2F%2Fwww.oracle.com%2F; -securebackup-cookie\" http://download.oracle.com/otn-pub/java/jdk/8u151-b12/e758a0de34e24606bca991d704f6dcbf/jdk-8u151-linux-x64.tar.gz\n" +
@@ -139,7 +139,9 @@ public class Manager {
         System.out.println(String.format("Sending message '%s' to queue with url - %s.", message, queueUrl));
     }
 
-    //----------------------------------S3----------------------------------
+    public void deleteMessage(Message message, String queueUrl) {
+        sqs.deleteMessage(queueUrl, message.getReceiptHandle());
+    }
 
     public Message readMessagesLookFor(String lookFor, String queueUrl) {
         ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl);
@@ -156,7 +158,7 @@ public class Manager {
         ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl);
         List<Message> messages = sqs.receiveMessage(receiveMessageRequest).getMessages();
         for (Message message : messages) {
-            String firstLine = message.getBody().substring(0,message.getBody().indexOf("\n"));
+            String firstLine = message.getBody().substring(0, message.getBody().indexOf("\n"));
             if (firstLine.equals(lookFor)) {
                 return message;
             }
@@ -164,9 +166,7 @@ public class Manager {
         return null;
     }
 
-    public void deleteMessage(Message message, String queueUrl) {
-        sqs.deleteMessage(queueUrl, message.getReceiptHandle());
-    }
+    //----------------------------------S3----------------------------------
 
     public String downloadFile(String bucketName, String key) {
         System.out.println(String.format("Downloading an object from bucket name - %s, key - %s", bucketName, key));
@@ -188,6 +188,14 @@ public class Manager {
         }
 
         return text;
+    }
+
+    public String uploadFile(String bucketName, String file,int id) {
+        //TODO add logs
+        String key = "output_file_number "+Integer.toString(id).replace('\\', '_').replace('/', '_').replace(':', '_');
+        PutObjectRequest req = new PutObjectRequest(bucketName, key, file);
+        s3.putObject(req);
+        return key;
     }
 
     public static void main(String[] args) {
@@ -222,4 +230,10 @@ public class Manager {
         }
 
     }
+
+    public void uploadOutputFile(String bucketName, String file,int id){
+        String key = uploadFile(bucketName,file,id);
+        sendMessage(Integer.toString(id)+"\nkey\nDSPS_assignment1 output in bucket",getLocalAppQueueUrl());//TODO verify indexes are identical!!!!!
+
+    }//<io index>\n s3object's key\n DSPS_assignment1 output in bucket
 }

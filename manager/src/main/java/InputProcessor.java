@@ -9,13 +9,13 @@ import java.util.List;
 
 public class InputProcessor implements Runnable {
     private String input;
-    private int nWorkers;
     private Manager manager;
+    private int id;
 
-    public InputProcessor(String input, int nWorkers, Manager manager) {
+    public InputProcessor(String input, Manager manager,int id) {
         this.input = input;
-        this.nWorkers = nWorkers;
         this.manager = manager;
+        this.id = id;
     }
 
     public void run() {
@@ -33,13 +33,12 @@ public class InputProcessor implements Runnable {
 
             //put all messages in queue
             for(JSONArray array:list){
-                for(Object obj:array){
-                    manager.sendMessage("UNPROCESSED\n"+obj.toString(),url);// check if correct to do this like this, wont stop manager.
-                                                                                     // outputs first line is 'UNPROCESSED'.
-                }
+                for(Object obj:array) {
+                    manager.sendMessage("UNPROCESSED\n" + obj.toString(), url);// check if correct to do this like this, wont stop manager.
+                }                                                                       // outputs first line is 'UNPROCESSED'.
             }
-
-            manager.addWorkingQueue(url);
+            manager.runNWorkers(url);
+            manager.processOutput(url,id);
 
         } catch (Exception e) {
             System.out.println(e.getMessage());
