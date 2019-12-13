@@ -12,7 +12,7 @@ public class InputProcessor implements Runnable {
     private Manager manager;
     private int id;
 
-    public InputProcessor(String input, Manager manager,int id) {
+    public InputProcessor(String input, Manager manager, int id) {
         this.input = input;
         this.manager = manager;
         this.id = id;
@@ -30,15 +30,16 @@ public class InputProcessor implements Runnable {
                 list.add(reviews);
             }
             String url = manager.createQueue();
-
+            int messageCount = 0;
             //put all messages in queue
-            for(JSONArray array:list){
-                for(Object obj:array) {
+            for (JSONArray array : list) {
+                for (Object obj : array) {
                     manager.sendMessage("UNPROCESSED\n" + obj.toString(), url);// check if correct to do this like this, wont stop manager.
-                }                                                                       // outputs first line is 'UNPROCESSED'.
+                    messageCount++;                                                     // outputs first line is 'UNPROCESSED'.
+                }
             }
             manager.runNWorkers(url);
-            manager.processOutput(url,id);
+            manager.processOutput(url, id, messageCount);
 
         } catch (Exception e) {
             System.out.println(e.getMessage());

@@ -29,6 +29,7 @@ import java.io.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Manager {
     private AmazonS3 s3;
@@ -40,8 +41,9 @@ public class Manager {
     private ExecutorService inputReadingPool = Executors.newCachedThreadPool();
     private ExecutorService outputReadingPool = Executors.newCachedThreadPool();
 
-    private Map<Integer,String> inputBuckets = new HashMap<Integer, String>();
-    private int id=0;
+    private Map<Integer, String> inputBuckets = new HashMap<Integer, String>();
+    private int id = 0;
+
     public Manager() {
         credentialsProvider = new InstanceProfileCredentialsProvider(false);//TODO fix how to get credentials
 
@@ -69,22 +71,22 @@ public class Manager {
         return localAppQueueUrl;
     }
 
-    public void processInput(String input,int id) {
-        inputReadingPool.execute(new InputProcessor(input, this,id));
+    public void processInput(String input, int id) {
+        inputReadingPool.execute(new InputProcessor(input, this, id));
     }
 
-    public int insertToInputBuckets(String bucketName){
-        inputBuckets.put(id,bucketName);
+    public int insertToInputBuckets(String bucketName) {
+        inputBuckets.put(id, bucketName);
         id++;
         return id;
     }
 
-    public String getBucketName(int id){
+    public String getBucketName(int id) {
         return inputBuckets.get(id);
     }
 
-    public void processOutput(String queueUrl,int id) {
-        outputReadingPool.execute(new OutputHandler(queueUrl,this,id));
+    public void processOutput(String queueUrl, int id, int messageCount) {
+        outputReadingPool.execute(new OutputHandler(queueUrl, this, id, messageCount));
     }
 
     //----------------------------------EC2---------------------------------
@@ -190,50 +192,23 @@ public class Manager {
         return text;
     }
 
-    public String uploadFile(String bucketName, String file,int id) {
+    public String uploadFile(String bucketName, String file, int id) {
         //TODO add logs
-        String key = "output_file_number "+Integer.toString(id).replace('\\', '_').replace('/', '_').replace(':', '_');
+        String key = "output_file_number " + Integer.toString(id).replace('\\', '_').replace('/', '_').replace(':', '_');
         PutObjectRequest req = new PutObjectRequest(bucketName, key, file);
         s3.putObject(req);
         return key;
     }
 
     public static void main(String[] args) {
-//        try {
-//            File fileName = new File("/Users/yoav.keissar/Downloads/jsonFile");
-//            FileReader reader = new FileReader(fileName);
-//            JSONParser parser = new JSONParser();
-//
-//            BufferedReader br = new BufferedReader(new FileReader(fileName));
-//            for(String line; (line = br.readLine()) != null; ) {
-//                JSONObject obj = (JSONObject) parser.parse(line);
-//                JSONArray array = (JSONArray) obj.get("reviews");
-//            }
-//
-//        } catch (Exception e) {
-//            System.out.println(e.getMessage());
-//        }
-        try {
-            List<JSONArray> list = new ArrayList<JSONArray>();
-            File fileName = new File("/Users/yoav.keissar/Downloads/jsonFile");
-            BufferedReader br = new BufferedReader(new FileReader(fileName));
-            JSONParser parser = new JSONParser();
-
-            for (String line; (line = br.readLine()) != null; ) {
-                JSONObject obj2 = (JSONObject) parser.parse(line);
-                JSONArray reviews = (JSONArray) obj2.get("reviews");
-                list.add(reviews);
-            }
-
-
-        } catch (Exception e) {
-        }
+        AtomicInteger i = new AtomicInteger(0);
+        System.out.println(i);
 
     }
 
-    public void uploadOutputFile(String bucketName, String file,int id){
-        String key = uploadFile(bucketName,file,id);
-        sendMessage(Integer.toString(id)+"\nkey\nDSPS_assignment1 output in bucket",getLocalAppQueueUrl());//TODO verify indexes are identical!!!!!
+    public void uploadOutputFile(String bucketName, String file, int id) {
+        String key = uploadFile(bucketName, file, id);
+        sendMessage(Integer.toString(id) + "\nkey\nDSPS_assignment1 output in bucket", getLocalAppQueueUrl());//TODO verify indexes are identical!!!!!
 
     }//<io index>\n s3object's key\n DSPS_assignment1 output in bucket
 }
