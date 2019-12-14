@@ -23,16 +23,18 @@ public class OutputHandler implements Runnable {
     }
 
     public void run() {
-        //reads all from queue //TODO think how to verify all reviews was processed
+        //reads all from queue
         Message message = null;
 
         do {
-            message = manager.readMessagesLookForFirstLine("PROCESS\n", queueUrl);//TODO think how not to process same message twice
+            message = manager.readMessagesLookForFirstLine("PROCESSED\n", queueUrl);//TODO think how not to process same message twice
             readersPool.execute(new OutputProcessor(queueUrl, manager, output, message, currentMessageCount));
 
         } while (message != null && currentMessageCount.get() < expectedMessageCount);
 
         //uploading
         manager.uploadOutputFile(manager.getBucketName(id), output.get(), id);
+
+        readersPool.shutdown();
     }
 }

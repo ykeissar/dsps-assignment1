@@ -30,42 +30,32 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Manager {
     private AmazonS3 s3;
     private AmazonEC2 ec2;
-    private AWSCredentialsProvider credentialsProvider;
     private AmazonSQS sqs;
-    private String localAppQueueUrl = null; //TODO fix how to get that url, many local-app same queue?
-    private boolean terminate = false;
+    private String localAppQueueUrl = null; //TODO many local-app same queue?
     private ExecutorService inputReadingPool = Executors.newCachedThreadPool();
     private ExecutorService outputReadingPool = Executors.newCachedThreadPool();
-
+    private int workersRatio;
     private Map<Integer, String> inputBuckets = new HashMap<Integer, String>();
     private int id = 0;
 
-    public Manager() {
-        credentialsProvider = new InstanceProfileCredentialsProvider(false);//TODO fix how to get credentials
-
+    public Manager(String queueUrl,int workersRatio) {        //TODO fix how to get credentials
         s3 = AmazonS3ClientBuilder.standard()
-                .withCredentials(credentialsProvider)
                 .withRegion(Regions.US_WEST_2)
                 .build();
         ec2 = AmazonEC2ClientBuilder.standard()
-                .withCredentials(credentialsProvider)
                 .withRegion(Regions.US_WEST_2)
                 .build();
 
         sqs = AmazonSQSClientBuilder.standard()
-                .withCredentials(credentialsProvider)
                 .withRegion(Regions.US_WEST_2)
                 .build();
 
-    }
-
-    public boolean shouldTerminate() {
-        return terminate;
+        localAppQueueUrl = queueUrl;
+        this.workersRatio = workersRatio;
     }
 
     public String getLocalAppQueueUrl() {
@@ -76,10 +66,8 @@ public class Manager {
         inputReadingPool.execute(new InputProcessor(input, this, id));
     }
 
-    public int insertToInputBuckets(String bucketName) {
+    public void insertToInputBuckets(String bucketName, int id) {
         inputBuckets.put(id, bucketName);
-        id++;
-        return id;
     }
 
     public String getBucketName(int id) {
@@ -91,8 +79,8 @@ public class Manager {
     }
 
     //----------------------------------EC2---------------------------------
-    public List<Instance> runNWorkers(String queueUrl) {
-        RunInstancesRequest request = new RunInstancesRequest("ami-0c5204531f799e0c6", 1, 1);//TODO fix ammount
+    public List<Instance> runNWorkers(String queueUrl,int numOfWorkers) { //TODO continue method
+        RunInstancesRequest request = new RunInstancesRequest("ami-0c5204531f799e0c6", numOfWorkers, numOfWorkers);//TODO fix ammount
         request.setInstanceType(InstanceType.T1Micro.toString());
         String bootstrapManager = "#!$ cd /opt\n" +
                 "$ sudo wget --no-cookies --no-check-certificate --header \"Cookie: %3A%2F%2Fwww.oracle.com%2F; -securebackup-cookie\" http://download.oracle.com/otn-pub/java/jdk/8u151-b12/e758a0de34e24606bca991d704f6dcbf/jdk-8u151-linux-x64.tar.gz\n" +
@@ -113,7 +101,8 @@ public class Manager {
                 "export JAVA_HOME=/opt/jdk1.8.0_151\n" +
                 "export JRE_HOME=/opt/jdk1.8.0_151/jre\n" +
                 "export PATH=$PATH:$JAVA_HOME/bin:$JRE_HOME/bin\n" +
-                "Esc + :wq! (To save file)";// till here  - installing java
+                "Esc + :wq! (To save file)"+
+                "";// till here  - installing java
         //TODO run Worker jar with correct args, SQS URL with local-app
 
         String base64BootstrapManager = null;
@@ -127,7 +116,7 @@ public class Manager {
         return ec2.runInstances(request).getReservation().getInstances();
     }
 
-    //----------------------------------SQS---------------------------------
+    //----------------------------------SQS--------------------------------- //TODO SQS Visibility Time-out - find out whats next
 
     public String createQueue() {
         CreateQueueRequest createQueueRequest = new CreateQueueRequest("MyQueue" + UUID.randomUUID());
@@ -202,14 +191,17 @@ public class Manager {
     }
 
     public static void main(String[] args) {
-        AtomicInteger i = new AtomicInteger(0);
-        System.out.println(i);
 
     }
 
     public void uploadOutputFile(String bucketName, String file, int id) {
         String key = uploadFile(bucketName, file, id);
-        sendMessage(Integer.toString(id) + "\nkey\nDSPS_assignment1 output in bucket", getLocalAppQueueUrl());//TODO verify indexes are identical!!!!!
+        sendMessage(id + "\nkey\nDSPS_assignment1 output in bucket", getLocalAppQueueUrl());//TODO verify indexes are identical!!!!!
 
     }//<io index>\n s3object's key\n DSPS_assignment1 output in bucket
+
+    public void terminate() {
+        inputReadingPool.shutdown();
+
+    }
 }
