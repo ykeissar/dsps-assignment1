@@ -6,7 +6,6 @@ import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ec2.model.*;
 import com.amazonaws.services.identitymanagement.AmazonIdentityManagement;
-import com.amazonaws.services.identitymanagement.AmazonIdentityManagementClientBuilder;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.GetObjectRequest;
@@ -19,7 +18,6 @@ import com.amazonaws.services.sqs.model.CreateQueueRequest;
 import com.amazonaws.services.sqs.model.Message;
 import com.amazonaws.services.sqs.model.ReceiveMessageRequest;
 import com.amazonaws.services.sqs.model.SendMessageRequest;
-import com.sun.org.apache.xerces.internal.xs.StringList;
 import org.apache.commons.codec.binary.Base64;
 
 import java.io.*;
@@ -54,6 +52,7 @@ public class LocalApp {
                 .withCredentials(credentialsProvider)
                 .withRegion(Regions.US_WEST_2)
                 .build();
+
 
 //        iam =
 //                AmazonIdentityManagementClientBuilder.defaultClient();
@@ -121,7 +120,8 @@ public class LocalApp {
                 "export JAVA_HOME=/opt/jdk1.8.0_151\n" +
                 "export JRE_HOME=/opt/jdk1.8.0_151/jre\n" +
                 "export PATH=$PATH:$JAVA_HOME/bin:$JRE_HOME/bin\n" +
-                "Esc + :wq! (To save file)";// till here  - installing java
+                "Esc + :wq! (To save file)"+ // till here  - installing java
+                "$ java -jar Manager.jar "+getQueueUrl();
         //TODO add Manager tag, run Manager jar with correct args, SQS URL with local-app
 
         String base64BootstrapManager = null;

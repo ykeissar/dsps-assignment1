@@ -24,13 +24,12 @@ public class MainClass {
         }
 
         Map<Integer, String> inWork = new HashMap<Integer, String>();
-        List<Instance> instanceList = new ArrayList<Instance>();
 
 
         //TODO VERY IMPORTANT - move try,catch to each method, not all together.
         try {
             if (!myApp.doesManagerActive())
-                instanceList.add(myApp.startManager());//TODO use nWorkers - think where.
+                myApp.startManager();//TODO use nWorkers - think where.
 
             //upload input files to s3
             int index = 0;
@@ -40,7 +39,7 @@ public class MainClass {
                 inWork.put(index, inputKey);
 
                 //sending message to the queue with input location
-                myApp.sendMessage(String.format("Input_location-Bucket_name %s Key %s", myApp.getBucketName(), inputKey));
+                myApp.sendMessage(String.format("Input_location-Bucket_name %s Key %s ID %s", myApp.getBucketName(), inputKey,Integer.valueOf(index)));
             }
 
             //main loop, work until all works are done.
