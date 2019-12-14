@@ -36,6 +36,7 @@ public class LocalApp {
     private String queueUrl = null;
     private boolean terminate = false;//TODO check when to terminate exactly!!
     private AmazonIdentityManagement iam;
+    private static final String ROLE = "arn:aws:iam::592374997611:role/system_admin";
 
     public LocalApp() {
         credentialsProvider = new AWSStaticCredentialsProvider(new ProfileCredentialsProvider().getCredentials());
@@ -54,8 +55,8 @@ public class LocalApp {
                 .withRegion(Regions.US_WEST_2)
                 .build();
 
-        iam =
-                AmazonIdentityManagementClientBuilder.defaultClient();
+//        iam =
+//                AmazonIdentityManagementClientBuilder.defaultClient();
 
     }
 
@@ -99,8 +100,8 @@ public class LocalApp {
     public Instance startManager() {//TODO add logs
         RunInstancesRequest request = new RunInstancesRequest("ami-0c5204531f799e0c6", 1, 1);
         request.setInstanceType(InstanceType.T1Micro.toString());
-
-        request.setIamInstanceProfile(new IamInstanceProfileSpecification());//TODO find out more
+        request.setKeyName("my_key");//TODO findout how to put key
+     //   request.setIamInstanceProfile(new IamInstanceProfileSpecification().withArn(ROLE));//TODO find out more
         String bootstrapManager = "#!$ cd /opt\n" +
                 "$ sudo wget --no-cookies --no-check-certificate --header \"Cookie: %3A%2F%2Fwww.oracle.com%2F; -securebackup-cookie\" http://download.oracle.com/otn-pub/java/jdk/8u151-b12/e758a0de34e24606bca991d704f6dcbf/jdk-8u151-linux-x64.tar.gz\n" +
                 "$ sudo tar xzf jdk-8u151-linux-x64.tar.gz\n" +
@@ -132,14 +133,14 @@ public class LocalApp {
 
         request.setUserData(base64BootstrapManager);
         Instance i = ec2.runInstances(request).getReservation().getInstances().get(0);
+
         List<String> ids = new ArrayList<String>();
         ids.add(i.getInstanceId());
-
 
         List<Tag> tags = new ArrayList<Tag>();
         tags.add(new Tag("Owner","Amir_Yoav"));
         tags.add(new Tag("App","Manager"));
-        CreateTagsRequest tagsRequest = new CreateTagsRequest(ids,tags);
+        CreateTagsRequest tagsRequest = new CreateTagsRequest(ids,tags);//TODO continue here
         return i;
     }
 
@@ -214,6 +215,6 @@ public class LocalApp {
     }
 
     public static void main(String[] args) {
-
+        new LocalApp().startManager();
     }
 }

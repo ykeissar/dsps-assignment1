@@ -36,7 +36,6 @@ public class OutputProcessor implements Runnable {
             updatedCount = currentCount++;
         } while (!messageCount.compareAndSet(currentCount, updatedCount));
 
-
         manager.deleteMessage(message, queueUrl);
     }
 }

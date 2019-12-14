@@ -29,6 +29,7 @@ public class InputProcessor implements Runnable {
                 JSONArray reviews = (JSONArray) obj2.get("reviews");
                 list.add(reviews);
             }
+
             String url = manager.createQueue();
             int messageCount = 0;
             //put all messages in queue

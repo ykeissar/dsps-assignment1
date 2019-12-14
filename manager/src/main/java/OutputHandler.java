@@ -11,14 +11,13 @@ public class OutputHandler implements Runnable {
     private ExecutorService readersPool = Executors.newCachedThreadPool();
     private AtomicReference<String> output = new AtomicReference<String>();
     private int id;
-    private AtomicInteger currentMessageCount;
+    private AtomicInteger currentMessageCount = new AtomicInteger(0);
     private int expectedMessageCount;
 
     public OutputHandler(String queueUrl, Manager manager, int id, int count) {
         this.queueUrl = queueUrl;
         this.manager = manager;
         this.id = id;
-        this.currentMessageCount.set(0);
         expectedMessageCount = count;
 
     }
@@ -28,7 +27,7 @@ public class OutputHandler implements Runnable {
         Message message = null;
 
         do {
-            message = manager.readMessagesLookForFirstLine("PROCEEED", queueUrl);//TODO think how not to process same message twice
+            message = manager.readMessagesLookForFirstLine("PROCESS\n", queueUrl);//TODO think how not to process same message twice
             readersPool.execute(new OutputProcessor(queueUrl, manager, output, message, currentMessageCount));
 
         } while (message != null && currentMessageCount.get() < expectedMessageCount);

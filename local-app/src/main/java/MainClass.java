@@ -10,11 +10,12 @@ import java.util.Map;
 public class MainClass {
     public static void main(String[] args) throws Exception {
         LocalApp myApp = new LocalApp();
+
+        //agruments processing
         boolean terminateManager = args.length % 2 == 0;
         int workerMessageRatio = terminateManager ? Integer.parseInt(args[args.length - 2]) : Integer.parseInt(args[args.length - 1]);
         List<String> inputs = new ArrayList<String>();
         List<String> outputs = new ArrayList<String>();
-        Map<Integer, String> inWork = new HashMap<Integer, String>();
         int numOfInputs = (args.length - 1) / 2;
 
         for (int i = 0; i < numOfInputs; i++) {
@@ -22,7 +23,10 @@ public class MainClass {
             outputs.add(args[i + numOfInputs]);
         }
 
+        Map<Integer, String> inWork = new HashMap<Integer, String>();
         List<Instance> instanceList = new ArrayList<Instance>();
+
+
         //TODO VERY IMPORTANT - move try,catch to each method, not all together.
         try {
             if (!myApp.doesManagerActive())
