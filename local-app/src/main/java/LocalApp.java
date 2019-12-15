@@ -35,6 +35,8 @@ public class LocalApp {
     private boolean terminate = false;//TODO check when to terminate exactly!!
     private AmazonIdentityManagement iam;
     private static final String ROLE = "arn:aws:iam::592374997611:role/system_admin";
+    private static final String AMI = "ami-00221e3ef03dfd01b";
+    private static final String KEY_PAIR = "my_key3";
 
     public LocalApp() {
         credentialsProvider = new AWSStaticCredentialsProvider(new ProfileCredentialsProvider().getCredentials());
@@ -97,32 +99,11 @@ public class LocalApp {
     }
 
     public Instance startManager() {//TODO add logs
-        RunInstancesRequest request = new RunInstancesRequest("ami-0c5204531f799e0c6", 1, 1);
+        RunInstancesRequest request = new RunInstancesRequest(AMI, 1, 1);
         request.setInstanceType(InstanceType.T1Micro.toString());
-        request.setKeyName("my_key");//TODO findout how to put key
-     //   request.setIamInstanceProfile(new IamInstanceProfileSpecification().withArn(ROLE));//TODO find out more
-        String bootstrapManager = "#!$ cd /opt\n" +
-                "$ sudo wget --no-cookies --no-check-certificate --header \"Cookie: %3A%2F%2Fwww.oracle.com%2F; -securebackup-cookie\" http://download.oracle.com/otn-pub/java/jdk/8u151-b12/e758a0de34e24606bca991d704f6dcbf/jdk-8u151-linux-x64.tar.gz\n" +
-                "$ sudo tar xzf jdk-8u151-linux-x64.tar.gz\n" +
-                "$ cd jdk1.8.0_151/\n" +
-                "$ sudo alternatives --install /usr/bin/java java /opt/jdk1.8.0_151/bin/java 2\n" +
-                "$ sudo alternatives --config java\n" +
-                "There are 2 programs which provide 'java'.\n" +
-                "  Selection    Command\n" +
-                "-----------------------------------------------\n" +
-                "*+ 1           /usr/lib/jvm/jre-1.7.0-openjdk.x86_64/bin/java\n" +
-                "   2           /opt/jdk1.8.0_151/bin/java\n" +
-                "Enter to keep the current selection[+], or type selection number: 2" +
-                "$ sudo alternatives --install /usr/bin/jar jar /opt/jdk1.8.0_151/bin/jar 2\n" +
-                "$ sudoalternatives --set jar /opt/jdk1.8.0_151/bin/jar\n" +
-                "$ sudo alternatives --set javac /opt/jdk1.8.0_151/bin/javac" +
-                "# vim /etc/profile\n" +
-                "export JAVA_HOME=/opt/jdk1.8.0_151\n" +
-                "export JRE_HOME=/opt/jdk1.8.0_151/jre\n" +
-                "export PATH=$PATH:$JAVA_HOME/bin:$JRE_HOME/bin\n" +
-                "Esc + :wq! (To save file)"+ // till here  - installing java
-                "$ java -jar Manager.jar "+getQueueUrl();
-        //TODO add Manager tag, run Manager jar with correct args, SQS URL with local-app
+        request.setKeyName(KEY_PAIR);
+        String bootstrapManager = "$ java -jar Manager.jar " + getQueueUrl();
+        //TODO run Manager jar with correct args
 
         String base64BootstrapManager = null;
         try {
@@ -132,15 +113,17 @@ public class LocalApp {
         }
 
         request.setUserData(base64BootstrapManager);
+        //   request.setIamInstanceProfile(new IamInstanceProfileSpecification().withArn(ROLE));//TODO find out more
         Instance i = ec2.runInstances(request).getReservation().getInstances().get(0);
 
         List<String> ids = new ArrayList<String>();
         ids.add(i.getInstanceId());
 
         List<Tag> tags = new ArrayList<Tag>();
-        tags.add(new Tag("Owner","Amir_Yoav"));
-        tags.add(new Tag("App","Manager"));
-        CreateTagsRequest tagsRequest = new CreateTagsRequest(ids,tags);//TODO continue here
+        tags.add(new Tag("Owner", "Amir_Yoav"));
+        tags.add(new Tag("App", "Manager"));
+        CreateTagsRequest tagsRequest = new CreateTagsRequest(ids, tags);
+        ec2.createTags(tagsRequest);
         return i;
     }
 
@@ -215,6 +198,19 @@ public class LocalApp {
     }
 
     public static void main(String[] args) {
-        new LocalApp().startManager();
+        LocalApp lp = new LocalApp();
+        RunInstancesRequest request = new RunInstancesRequest("ami-00221e3ef03dfd01b", 1, 1);
+        request.setKeyName("my_key3");
+        request.setInstanceType(InstanceType.T1Micro.toString());
+        List<Tag> tags = new ArrayList<Tag>();
+
+
+
+        List<Instance> instance = lp.ec2.runInstances(request).getReservation().getInstances();
+        List<String> id = new ArrayList<String>();
+        id.add(instance.get(0).getInstanceId());
+
+        CreateTagsRequest tagsRequest = new CreateTagsRequest(id, tags);
+        lp.ec2.createTags(tagsRequest);
     }
 }

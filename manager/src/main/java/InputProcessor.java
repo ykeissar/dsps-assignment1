@@ -39,7 +39,7 @@ public class InputProcessor implements Runnable {
                     messageCount++;                                                     // outputs first line is 'UNPROCESSED'.
                 }
             }
-            manager.runNWorkers(url);
+            manager.runNWorkers(url,messageCount);
             manager.processOutput(url, id, messageCount);
 
         } catch (Exception e) {
