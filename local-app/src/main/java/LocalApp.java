@@ -102,7 +102,7 @@ public class LocalApp {
         RunInstancesRequest request = new RunInstancesRequest(AMI, 1, 1);
         request.setInstanceType(InstanceType.T1Micro.toString());
         request.setKeyName(KEY_PAIR);
-        String bootstrapManager = "$ java -jar Manager.jar " + getQueueUrl();
+        String bootstrapManager = "";//"$ java -jar Manager.jar " + getQueueUrl();
         //TODO run Manager jar with correct args
 
         String base64BootstrapManager = null;
