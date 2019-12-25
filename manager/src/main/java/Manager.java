@@ -74,35 +74,16 @@ public class Manager {
         return inputBuckets.get(id);
     }
 
-    public void processOutput(String queueUrl, int id, int messageCount) {
-        outputReadingPool.execute(new OutputHandler(queueUrl, this, id, messageCount));
+    public void processOutput(String queueUrl, int id, int messageCount, Map<Integer,Boolean> messagesProcessed) {
+        outputReadingPool.execute(new OutputHandler(queueUrl, this, id, messageCount,messagesProcessed));
     }
 
     //----------------------------------EC2---------------------------------
     public List<Instance> runNWorkers(String queueUrl,int numOfWorkers) { //TODO continue method
         RunInstancesRequest request = new RunInstancesRequest("ami-0c5204531f799e0c6", numOfWorkers, numOfWorkers);//TODO fix ammount
         request.setInstanceType(InstanceType.T1Micro.toString());
-        String bootstrapManager = "#!$ cd /opt\n" +
-                "$ sudo wget --no-cookies --no-check-certificate --header \"Cookie: %3A%2F%2Fwww.oracle.com%2F; -securebackup-cookie\" http://download.oracle.com/otn-pub/java/jdk/8u151-b12/e758a0de34e24606bca991d704f6dcbf/jdk-8u151-linux-x64.tar.gz\n" +
-                "$ sudo tar xzf jdk-8u151-linux-x64.tar.gz\n" +
-                "$ cd jdk1.8.0_151/\n" +
-                "$ sudo alternatives --install /usr/bin/java java /opt/jdk1.8.0_151/bin/java 2\n" +
-                "$ sudo alternatives --config java\n" +
-                "There are 2 programs which provide 'java'.\n" +
-                "  Selection    Command\n" +
-                "-----------------------------------------------\n" +
-                "*+ 1           /usr/lib/jvm/jre-1.7.0-openjdk.x86_64/bin/java\n" +
-                "   2           /opt/jdk1.8.0_151/bin/java\n" +
-                "Enter to keep the current selection[+], or type selection number: 2" +
-                "$ sudo alternatives --install /usr/bin/jar jar /opt/jdk1.8.0_151/bin/jar 2\n" +
-                "$ sudoalternatives --set jar /opt/jdk1.8.0_151/bin/jar\n" +
-                "$ sudo alternatives --set javac /opt/jdk1.8.0_151/bin/javac" +
-                "# vim /etc/profile\n" +
-                "export JAVA_HOME=/opt/jdk1.8.0_151\n" +
-                "export JRE_HOME=/opt/jdk1.8.0_151/jre\n" +
-                "export PATH=$PATH:$JAVA_HOME/bin:$JRE_HOME/bin\n" +
-                "Esc + :wq! (To save file)"+
-                "";// till here  - installing java
+        String bootstrapManager = new StringBuilder().append("$aws s3 s3://amiryoavbucket4848/worker.jar\n").toString();
+        //"$ java -jar worker.jar " + getQueueUrl();
         //TODO run Worker jar with correct args, SQS URL with local-app
 
         String base64BootstrapManager = null;
@@ -196,7 +177,7 @@ public class Manager {
 
     public void uploadOutputFile(String bucketName, String file, int id) {
         String key = uploadFile(bucketName, file, id);
-        sendMessage(id + "\nkey\nDSPS_assignment1 output in bucket", getLocalAppQueueUrl());//TODO verify indexes are identical!!!!!
+        sendMessage(id + "\nkey\nOutput in bucket", getLocalAppQueueUrl());//TODO verify indexes are identical!!!!!
 
     }//<io index>\n s3object's key\n DSPS_assignment1 output in bucket
 

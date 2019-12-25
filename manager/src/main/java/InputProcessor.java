@@ -5,17 +5,21 @@ import org.json.simple.parser.JSONParser;
 import java.io.BufferedReader;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class InputProcessor implements Runnable {
     private String input;
     private Manager manager;
-    private int id;
+    private int inputId;
+    private Map<Integer, Boolean> messagesProcessed = new HashMap<Integer, Boolean>();
+
 
     public InputProcessor(String input, Manager manager, int id) {
         this.input = input;
         this.manager = manager;
-        this.id = id;
+        this.inputId = id;
     }
 
     public void run() {
@@ -35,12 +39,13 @@ public class InputProcessor implements Runnable {
             //put all messages in queue
             for (JSONArray array : list) {
                 for (Object obj : array) {
-                    manager.sendMessage("UNPROCESSED\n" + obj.toString(), url);// check if correct to do this like this, wont stop manager.
-                    messageCount++;                                                     // outputs first line is 'UNPROCESSED'.
+                    messagesProcessed.put(messageCount, false);
+                    manager.sendMessage("UNPROCESSED\n" + messageCount + "\n" + obj.toString(), url);// check if correct to do this like this, wont stop manager.
+                    messageCount++;                                                     // outputs first line is 'UNPROCESSED', second line id.
                 }
             }
-            manager.runNWorkers(url,messageCount);
-            manager.processOutput(url, id, messageCount);
+            manager.runNWorkers(url, messageCount);
+            manager.processOutput(url, inputId, messageCount, messagesProcessed);
 
         } catch (Exception e) {
             System.out.println(e.getMessage());

@@ -1,5 +1,7 @@
 import com.amazonaws.services.sqs.model.Message;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -13,13 +15,14 @@ public class OutputHandler implements Runnable {
     private int id;
     private AtomicInteger currentMessageCount = new AtomicInteger(0);
     private int expectedMessageCount;
+    private Map<Integer, Boolean> messagesProcessed;
 
-    public OutputHandler(String queueUrl, Manager manager, int id, int count) {
+    public OutputHandler(String queueUrl, Manager manager, int id, int count, Map<Integer, Boolean> messagesProcessed) {
         this.queueUrl = queueUrl;
         this.manager = manager;
         this.id = id;
         expectedMessageCount = count;
-
+        this.messagesProcessed = messagesProcessed;
     }
 
     public void run() {
@@ -28,7 +31,11 @@ public class OutputHandler implements Runnable {
 
         do {
             message = manager.readMessagesLookForFirstLine("PROCESSED\n", queueUrl);//TODO think how not to process same message twice
-            readersPool.execute(new OutputProcessor(queueUrl, manager, output, message, currentMessageCount));
+            int id = Integer.parseInt(message.getBody().substring(message.getBody().indexOf("\n"), message.getBody().indexOf("\n",message.getBody().indexOf("\n"))));
+            if (!messagesProcessed.get(id)) {
+                readersPool.execute(new OutputProcessor(queueUrl, manager, output, message, currentMessageCount));
+                messagesProcessed.put(id, true);
+            }
 
         } while (message != null && currentMessageCount.get() < expectedMessageCount);
 

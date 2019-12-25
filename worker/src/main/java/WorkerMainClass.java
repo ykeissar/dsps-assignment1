@@ -8,9 +8,10 @@ public class WorkerMainClass {
             Message message = worker.readMessagesLookForFirstLine("UNPROCESSED", worker.getQueueUrl());
             if (message != null) {
                 String content = message.getBody().substring(message.getBody().indexOf("\n"));
+                int id = Integer.parseInt(content.substring(content.indexOf("\n")));
                 String processedReview = worker.processReview(content);//TODO finish processReview
-                worker.sendMessage("PROCESSED\n" + processedReview, worker.getQueueUrl());
-                worker.deleteMessage(message,worker.getQueueUrl());
+                worker.sendMessage("PROCESSED\n" + id + "\n" + processedReview, worker.getQueueUrl());
+                worker.deleteMessage(message, worker.getQueueUrl());
             }
         }
     }

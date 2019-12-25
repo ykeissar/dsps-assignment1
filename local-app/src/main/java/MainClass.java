@@ -23,46 +23,41 @@ public class MainClass {
             outputs.add(args[i + numOfInputs]);
         }
 
-        Map<Integer, String> inWork = new HashMap<Integer, String>();
+        Map<String, String> inWork = new HashMap<String, String>();
 
+        myApp.getManager(workerMessageRatio);
 
-        //TODO VERY IMPORTANT - move try,catch to each method, not all together.
-        try {
-            if (!myApp.doesManagerActive())
-                myApp.startManager();//TODO use nWorkers - think where.
+        //upload input files to s3
+        String id = "0";
+        for (String address : inputs) {
+            File inputFile = new File(address); //TODO verify that right arg and syntax
+            String inputKey = myApp.uploadFile(inputFile);
+            inWork.put(id, inputKey);
 
-            //upload input files to s3
-            int index = 0;
-            for (String address : inputs) {
-                File inputFile = new File(address); //TODO verify that right arg and syntax
-                String inputKey = myApp.uploadFile(inputFile);
-                inWork.put(index, inputKey);
-
-                //sending message to the queue with input location
-                myApp.sendMessage(String.format("Input_location-Bucket_name %s Key %s ID %s", myApp.getBucketName(), inputKey,Integer.valueOf(index)));
-            }
-
-            //main loop, work until all works are done.
-            while (!inWork.isEmpty()) {
-                String messageBody = myApp.readMessagesLookFor("DSPS_assignment1 output in bucket"); //message format - <io index>\n s3object's key\n DSPS_assignment1 output in bucket
-                if (messageBody.length() > 0) {
-                    String[] rows = messageBody.split("\n");
-                    int ioIndex = Integer.parseInt(rows[0]);
-                    String outputKey = rows[1];
-                    String outputContent = myApp.downloadFile(outputKey);
-                    myApp.toHtml(outputContent, inWork.get(ioIndex));
-                    inWork.remove(ioIndex);
-                }
-            }
-            myApp.terminate();
-
-        } catch (AmazonServiceException ase) {
-            System.out.println("Caught Exception: " + ase.getMessage());
-            System.out.println("Reponse Status Code: " + ase.getStatusCode());
-            System.out.println("Error Code: " + ase.getErrorCode());
-            System.out.println("Request ID: " + ase.getRequestId());
+            //sending message to the queue with input location
+            myApp.sendMessage(new StringBuilder("Input_location-Bucket_name ")
+                    .append(myApp.getBucketName())
+                    .append(" Key ")
+                    .append(inputKey)
+                    .append(" ID ")
+                    .append(id)
+                    .toString());
 
         }
+
+        //main loop, work until all works are done.
+        while (!inWork.isEmpty()) {
+            String messageBody = myApp.readMessagesLookFor("Output in bucket"); //message format - <io index>\n s3object's key\n DSPS_assignment1 output in bucket
+            if (messageBody.length() > 0) {
+                String[] rows = messageBody.split("\n");
+                int ioIndex = Integer.parseInt(rows[0]);
+                String outputKey = rows[1];
+                String outputContent = myApp.downloadFile(outputKey);
+                myApp.toHtml(outputContent, inWork.get(ioIndex));
+                inWork.remove(ioIndex);
+            }
+        }
+        myApp.terminate();
 
     }
 
