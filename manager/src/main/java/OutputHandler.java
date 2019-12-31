@@ -30,7 +30,7 @@ public class OutputHandler implements Runnable {
         Message message = null;
 
         do {
-            message = manager.readMessagesLookForFirstLine("PROCESSED\n", queueUrl);//TODO think how not to process same message twice
+            message = manager.readMessagesLookForFirstLine("PROCESSED\n", queueUrl); //TODO think how not to process same message twice
             int id = Integer.parseInt(message.getBody().substring(message.getBody().indexOf("\n"), message.getBody().indexOf("\n",message.getBody().indexOf("\n"))));
             if (!messagesProcessed.get(id)) {
                 readersPool.execute(new OutputProcessor(queueUrl, manager, output, message, currentMessageCount));

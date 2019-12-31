@@ -43,9 +43,8 @@
                     <archive>
                         <manifest>
                             <addClasspath>true</addClasspath>
-                            <classpathPrefix>libs/</classpathPrefix>
                             <mainClass>
-                                test.src.main.java.MainClass
+                                MainClass
                             </mainClass>
                         </manifest>
                     </archive>

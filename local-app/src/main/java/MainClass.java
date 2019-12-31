@@ -1,6 +1,3 @@
-import com.amazonaws.AmazonServiceException;
-import com.amazonaws.services.ec2.model.Instance;
-
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -8,7 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 public class MainClass {
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
         LocalApp myApp = new LocalApp();
 
         //agruments processing

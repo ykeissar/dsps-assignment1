@@ -1,14 +1,6 @@
-import com.amazonaws.services.sqs.AbstractAmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.model.Message;
 import com.amazonaws.services.sqs.model.ReceiveMessageRequest;
-
-import java.io.File;
-import java.util.List;
-
-import java.util.List;
-import java.util.Properties;
-
 import com.amazonaws.services.sqs.model.SendMessageRequest;
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreAnnotations.NamedEntityTagAnnotation;
@@ -22,10 +14,13 @@ import edu.stanford.nlp.rnn.RNNCoreAnnotations;
 import edu.stanford.nlp.sentiment.SentimentCoreAnnotations;
 import edu.stanford.nlp.trees.Tree;
 import edu.stanford.nlp.util.CoreMap;
-import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Properties;
 
 
 public class Worker {
@@ -63,11 +58,25 @@ public class Worker {
     }
 
     public String processReview(String review) {
-        String toReturn = "";
+        String toReturn = review;
 
         int sentiment = findSentiment(review);
+
+        //coloring review
+        switch(sentiment) {
+            case 0:
+                toReturn = "<font color=#930000>" + toReturn + "</font>";
+            case 1:
+                toReturn = "<font color=#FF0000>" + toReturn + "</font>";
+            case 3:
+                toReturn = "<font color=#0FFF00>" + toReturn + "</font>";
+            case 4:
+                toReturn = "<font color=#088300>" + toReturn + "</font>";
+        }
+
         int sarcastic = findRating(review) - sentiment;
-        return sarcastic > 3 ? toReturn + "sarcastic" : toReturn+"not_sarcastic";
+        toReturn+=getEntities(review);
+        return sarcastic > 3 ? toReturn + " sarcastic" : toReturn+" not_sarcastic";
     }
 
     public static int findRating(String review) {
@@ -107,36 +116,36 @@ public class Worker {
         return mainSentiment;
     }
 
-    public static String printEntities(String review) {
-        Properties props = new Properties();
-        props.put("annotators", "tokenize , ssplit, pos, lemma, ner");
-        StanfordCoreNLP NERPipeline = new StanfordCoreNLP(props);
-
-        String toReturn = "[";
+    public String getEntities(String review){
+        StringBuilder entities = new StringBuilder().append(" [");
+        List<String> entitiesToKeep = new ArrayList<String>();
+        entitiesToKeep.add("PERSON");
+        entitiesToKeep.add("LOCATION");
+        entitiesToKeep.add("ORGANIZATION");
 
         // create an empty Annotation just with the given text
         Annotation document = new Annotation(review);
 
         // run all Annotators on this text
-        NERPipeline.annotate(document);
+        //NERPipeline.annotate(document);
 
         // these are all the sentences in this document
         // a CoreMap is essentially a Map that uses class objects as keys and has values with custom types
         List<CoreMap> sentences = document.get(SentencesAnnotation.class);
 
-        for (CoreMap sentence : sentences) {
+        for(CoreMap sentence: sentences) {
             // traversing the words in the current sentence
             // a CoreLabel is a CoreMap with additional token-specific methods
-            for (CoreLabel token : sentence.get(TokensAnnotation.class)) {
+            for (CoreLabel token: sentence.get(TokensAnnotation.class)) {
                 // this is the text of the token
                 String word = token.get(TextAnnotation.class);
                 // this is the NER label of the token
                 String ne = token.get(NamedEntityTagAnnotation.class);
-                toReturn += ne + ",";
+                if(entitiesToKeep.contains(ne))
+                    entities.append(ne).append(":").append(word).append(",");
             }
         }
-        return toReturn.substring(0, toReturn.length() - 1) + "]";
-
+        return entities.append("]").toString();
     }
 
     public static void main(String[] args) {

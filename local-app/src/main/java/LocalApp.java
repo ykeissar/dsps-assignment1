@@ -33,11 +33,12 @@ public class LocalApp {
     private String queueUrl = null;
     private boolean terminate = false;//TODO check when to terminate exactly!!
     private AmazonIdentityManagement iam;
-    private static final String ROLE = "arn:aws:iam::592374997611:role/system_admin";
+    private static final String ARN = "arn:aws:iam::592374997611:instance-profile/admin";
     private static final String AMI = "ami-00221e3ef03dfd01b";
     private static final String KEY_PAIR = "my_key3";
     private String lpId = UUID.randomUUID().toString();
     private Queue<String> testManagerQueue = new LinkedList<String>();
+    private String managerJar = "https://github.com/ykeissar/assignment1/raw/master/manager-1.0-SNAPSHOT.jar";
 
     public LocalApp() {
         try {
@@ -143,9 +144,18 @@ public class LocalApp {
             RunInstancesRequest request = new RunInstancesRequest(AMI, 1, 1);
             request.setInstanceType(InstanceType.T1Micro.toString());
             request.setKeyName(KEY_PAIR);
+
+            IamInstanceProfileSpecification iam = new IamInstanceProfileSpecification();
+            iam.setArn(ARN);
+            request.setIamInstanceProfile(iam);
+
             String workerRatio = Integer.toString(workerMessageRatio);
-            String bootstrapManager = new StringBuilder().append("$aws s3 s3://amiryoavbucket4848/managar.jar\n")
-                    .append("$ java -jar Manager.jar ")
+            System.out.println("Queue: "+getQueueUrl());
+            String bootstrapManager = new StringBuilder()
+                    .append("#! /bin/bash\n")
+                    .append("aws s3 cp s3://yoavsbucke83838/manager-1.0-SNAPSHOT.jar manager-1.0-SNAPSHOT.jar ")
+                    .append("cd ../../\n")
+                    .append("\njava -jar manager-1.0-SNAPSHOT.jar ")
                     .append(getQueueUrl())
                     .append(" ")
                     .append(workerRatio)
@@ -179,17 +189,18 @@ public class LocalApp {
 //        System.out.println("UserData: " + userdata)
 
             request.setUserData(base64BootstrapManager);
-            Instance i = ec2.runInstances(request).getReservation().getInstances().get(0);
+          //  Instance i = ec2.runInstances(request).getReservation().getInstances().get(0);
 
-            List<String> ids = new ArrayList<String>();
-            ids.add(i.getInstanceId());
-
-            List<Tag> tags = new ArrayList<Tag>();
-            tags.add(new Tag("Owner", "Amir_Yoav"));
-            tags.add(new Tag("App", "Manager"));
-            CreateTagsRequest tagsRequest = new CreateTagsRequest(ids, tags);
-            ec2.createTags(tagsRequest);
-            return i;
+//            List<String> ids = new ArrayList<String>();
+//            ids.add(i.getInstanceId());
+//
+//            List<Tag> tags = new ArrayList<Tag>();
+//            tags.add(new Tag("Owner", "Amir_Yoav"));
+//            tags.add(new Tag("App", "Manager"));
+//            CreateTagsRequest tagsRequest = new CreateTagsRequest(ids, tags);
+//            ec2.createTags(tagsRequest);
+//            return i;
+            return null;
         } catch (AmazonServiceException ase) {
             System.out.println("Caught Exception: " + ase.getMessage());
             System.out.println("Reponse Status Code: " + ase.getStatusCode());
@@ -197,6 +208,7 @@ public class LocalApp {
             System.out.println("Request ID: " + ase.getRequestId());
 
         }
+        getQueueUrl();
         return null;
     }
 
@@ -205,8 +217,8 @@ public class LocalApp {
     public String uploadFile(File file) {
         try {
             if (bucketName == null) {
-                String bucketName =
-                        credentialsProvider.getCredentials().getAWSAccessKeyId().replace('/', '_').replace(':', '_');
+                bucketName =
+                        credentialsProvider.getCredentials().getAWSAccessKeyId().replace('/', '_').replace(':', '_').toLowerCase();
                 System.out.println(String.format("Creating bucket %s.", bucketName));
                 s3.createBucket(bucketName);
             }//TODO add logs
@@ -286,8 +298,9 @@ public class LocalApp {
     public void sendMessage(String message) {
         try {
             sqs.sendMessage(new SendMessageRequest(getQueueUrl(), message));
-            System.out.println(new StringBuilder("Sending message '%s' to queue with url - %s.")
+            System.out.println(new StringBuilder("Sending message '")
                     .append(message)
+                    .append("' to queue with url - ")
                     .append(getQueueUrl())
                     .toString());
         } catch (AmazonServiceException ase) {
@@ -323,14 +336,13 @@ public class LocalApp {
 
     public static void main(String[] args) {
         LocalApp lp = new LocalApp();
-        //lp.startManager();
-//        lp.s3.createBucket("yoavsbucke83838");
-//        String key = "7561157";
-//
-//        //File f = new File("/Users/yoav.keissar/Documents/assignment1/test");
-//        PutObjectRequest req = new PutObjectRequest("yoavsbucke83838", key,"/Users/yoav.keissar/Documents/assignment1/test");
-//        lp.s3.putObject(req);
-        //request.setIamInstanceProfile(new IamInstanceProfileSpecification().withArn(ROLE));
-
+        lp.getManager(7);
+        while(true) {
+            String m = lp.readMessagesLookFor("");
+            if (m != null && m.length() > 0){
+                System.out.println(m);
+                 break;
+            }
+        }
     }
 }

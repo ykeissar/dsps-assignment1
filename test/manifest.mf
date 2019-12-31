@@ -1,2 +1,2 @@
-Manifest-version: 1.0
+Manifest-version: 1.0-SNAPSHOT
 Main-Class: /src/main/java/MainClass

@@ -1,5 +1,7 @@
 import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.InstanceProfileCredentialsProvider;
+import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
@@ -41,17 +43,24 @@ public class Manager {
     private int workersRatio;
     private Map<Integer, String> inputBuckets = new HashMap<Integer, String>();
     private int id = 0;
+    private AWSCredentialsProvider credentialsProvider;//TODO delete
+
 
     public Manager(String queueUrl,int workersRatio) {        //TODO fix how to get credentials
+        credentialsProvider = new AWSStaticCredentialsProvider(new ProfileCredentialsProvider().getCredentials()); //TODO delete
+
         s3 = AmazonS3ClientBuilder.standard()
                 .withRegion(Regions.US_WEST_2)
+                .withCredentials(credentialsProvider)//TODO delete
                 .build();
         ec2 = AmazonEC2ClientBuilder.standard()
                 .withRegion(Regions.US_WEST_2)
+                .withCredentials(credentialsProvider)//TODO delete
                 .build();
 
         sqs = AmazonSQSClientBuilder.standard()
                 .withRegion(Regions.US_WEST_2)
+                .withCredentials(credentialsProvider)//TODO delete
                 .build();
 
         localAppQueueUrl = queueUrl;
@@ -82,7 +91,10 @@ public class Manager {
     public List<Instance> runNWorkers(String queueUrl,int numOfWorkers) { //TODO continue method
         RunInstancesRequest request = new RunInstancesRequest("ami-0c5204531f799e0c6", numOfWorkers, numOfWorkers);//TODO fix ammount
         request.setInstanceType(InstanceType.T1Micro.toString());
-        String bootstrapManager = new StringBuilder().append("$aws s3 s3://amiryoavbucket4848/worker.jar\n").toString();
+        String bootstrapManager = new StringBuilder()
+                .append("$wget https://github.com/ykeissar/assignment1/raw/worker/worker-1.0-SNAPSHOT.jar ")
+                .append("java -jar worker-1.0-SNAPSHOT.jar ")
+                .toString();
         //"$ java -jar worker.jar " + getQueueUrl();
         //TODO run Worker jar with correct args, SQS URL with local-app
 
@@ -118,6 +130,7 @@ public class Manager {
 
     public Message readMessagesLookFor(String lookFor, String queueUrl) {
         ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl);
+        receiveMessageRequest.withWaitTimeSeconds(10);//TODO same at la and worker
         List<Message> messages = sqs.receiveMessage(receiveMessageRequest).getMessages();
         for (Message message : messages) {
             if (message.getBody().contains(lookFor)) {
