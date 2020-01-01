@@ -123,11 +123,15 @@ public class Worker {
         entitiesToKeep.add("LOCATION");
         entitiesToKeep.add("ORGANIZATION");
 
+        Properties props = new Properties();
+        props.put("annotators", "tokenize , ssplit, pos, lemma, ner");
+        StanfordCoreNLP NERPipeline =  new StanfordCoreNLP(props);
+
         // create an empty Annotation just with the given text
         Annotation document = new Annotation(review);
 
         // run all Annotators on this text
-        //NERPipeline.annotate(document);
+        NERPipeline.annotate(document);
 
         // these are all the sentences in this document
         // a CoreMap is essentially a Map that uses class objects as keys and has values with custom types
@@ -161,6 +165,7 @@ public class Worker {
                 "    }";
 
 //        System.out.println(findRating(s));
-        System.out.println(findSentiment(s));
+        Worker w = new Worker("");
+        System.out.println(w.processReview(s));
     }
 }
