@@ -1,4 +1,9 @@
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.AWSStaticCredentialsProvider;
+import com.amazonaws.auth.profile.ProfileCredentialsProvider;
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.sqs.AmazonSQS;
+import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
 import com.amazonaws.services.sqs.model.Message;
 import com.amazonaws.services.sqs.model.ReceiveMessageRequest;
 import com.amazonaws.services.sqs.model.SendMessageRequest;
@@ -17,23 +22,31 @@ import org.json.simple.parser.ParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Properties;
+import java.util.Random;
 
 
 public class Worker {
 
     private String queueUrl;
     private AmazonSQS sqs;
+   // private AWSCredentialsProvider credentialsProvider;//TODO delete
+
 
     public Worker(String queueUrl) {
         this.queueUrl = queueUrl;
+
+//        credentialsProvider = new AWSStaticCredentialsProvider(new ProfileCredentialsProvider().getCredentials()); //TODO delete
+
+        sqs = AmazonSQSClientBuilder.standard()
+                .withRegion(Regions.US_WEST_2)
+    //            .withCredentials(credentialsProvider)//TODO delete
+                .build();
     }
 
-    public String getQueueUrl() {
-        return queueUrl;
-    }
-
-    public Message readMessagesLookForFirstLine(String lookFor, String queueUrl) {
+    //----------------------------------AWS------------------------------------
+    public Message readMessagesLookForFirstLine(String lookFor) {
         ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl);
+        receiveMessageRequest.withWaitTimeSeconds(5);
         List<Message> messages = sqs.receiveMessage(receiveMessageRequest).getMessages();
         for (Message message : messages) {
             String firstLine = message.getBody().substring(0, message.getBody().indexOf("\n"));
@@ -44,35 +57,50 @@ public class Worker {
         return null;
     }
 
-    public void sendMessage(String message, String queueUrl) {
+    public void sendMessage(String message) {
         sqs.sendMessage(new SendMessageRequest(queueUrl, message));
         System.out.println(String.format("Sending message '%s' to queue with url - %s.", message, queueUrl));
     }
 
-    public void deleteMessage(Message message, String queueUrl) {
+    public void deleteMessage(Message message){
         sqs.deleteMessage(queueUrl, message.getReceiptHandle());
     }
 
+
+    //-----------------------------MessageProcess------------------------------
+
     public String processReview(String review) {
-        String toReturn = review;
+        String toReturn = review.substring(3);
 
         int sentiment = findSentiment(review);
 
         //coloring review
         switch(sentiment) {
-            case 0:
+            case 0: {
                 toReturn = "<font color=#930000>" + toReturn + "</font>";
-            case 1:
+                break;
+            }
+            case 1: {
                 toReturn = "<font color=#FF0000>" + toReturn + "</font>";
-            case 3:
+                break;
+            }
+            case 2: {
+                toReturn = "<font color=#000000>" + toReturn + "</font>";
+                break;
+            }
+            case 3: {
                 toReturn = "<font color=#0FFF00>" + toReturn + "</font>";
-            case 4:
+                break;
+            }
+            case 4: {
                 toReturn = "<font color=#088300>" + toReturn + "</font>";
+                break;
+            }
         }
 
         int sarcastic = findRating(review) - sentiment;
         toReturn+=getEntities(review);
-        return sarcastic > 3 ? toReturn + " sarcastic" : toReturn+" not_sarcastic";
+        return sarcastic > 3 ? toReturn + " sarcastic\n" : toReturn+" not_sarcastic\n";
     }
 
     public static int findRating(String review) {
@@ -98,8 +126,7 @@ public class Worker {
             Annotation annotation = sentimentPipeline.process(review);
             for (CoreMap sentence : annotation
                     .get(CoreAnnotations.SentencesAnnotation.class)) {
-                Tree tree = sentence
-                        .get(SentimentCoreAnnotations.AnnotatedTree.class);
+                Tree tree = sentence.get(SentimentCoreAnnotations.AnnotatedTree.class);
                 int sentiment = RNNCoreAnnotations.getPredictedClass(tree);
                 String partText = sentence.toString();
                 if (partText.length() > longest) {
@@ -163,5 +190,37 @@ public class Worker {
 //        System.out.println(findRating(s));
         Worker w = new Worker("");
         System.out.println(w.processReview(s));
+    }
+
+    public String tempProcessReview(String review) {//TODO delete
+        String toReturn = review.substring(3);
+        int sentiment = new Random().nextInt(5);
+        int rating = findRating(toReturn);
+        //coloring review
+        switch(sentiment) {
+            case 0: {
+                toReturn = "<font color=#930000>" + toReturn + "</font>";
+                break;
+            }
+            case 1: {
+                toReturn = "<font color=#FF0000>" + toReturn + "</font>";
+                break;
+            }
+            case 2: {
+                toReturn = "<font color=#000000>" + toReturn + "</font>";
+                break;
+            }
+            case 3: {
+                toReturn = "<font color=#0FFF00>" + toReturn + "</font>";
+                break;
+            }
+            case 4: {
+                toReturn = "<font color=#088300>" + toReturn + "</font>";
+                break;
+            }
+        }
+
+        int sarcastic = rating - sentiment;
+        return sarcastic > 3 ? toReturn + " sarcastic\n" : toReturn+" not_sarcastic\n";
     }
 }

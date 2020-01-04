@@ -17,6 +17,8 @@ public class ManagerMainClass {
 
                 String fileContent = manager.downloadFile(bucketName, key);
 
+                manager.deleteObject(bucketName,key);
+
                 manager.processInput(fileContent, id);
 
                 manager.deleteMessage(message, manager.getLocalAppQueueUrl());
@@ -33,4 +35,3 @@ public class ManagerMainClass {
 
 //TODO to think about - where do we need the concurrency? in the queue reading or in the data processing? both?
 //TODO add logs
-//TODO switch all to Strings to StringBuilder (maybe add a little StringUtil?)

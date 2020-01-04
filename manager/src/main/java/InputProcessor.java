@@ -1,3 +1,4 @@
+import com.amazonaws.services.ec2.model.Instance;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -44,8 +45,8 @@ public class InputProcessor implements Runnable {
                     messageCount++;                                                     // outputs first line is 'UNPROCESSED', second line id.
                 }
             }
-            manager.runNWorkers(url, messageCount);
-            manager.processOutput(url, inputId, messageCount, messagesProcessed);
+            List<Instance> workers = manager.runNWorkers(url, messageCount);
+            manager.processOutput(url, inputId, messageCount, messagesProcessed, workers);
 
         } catch (Exception e) {
             System.out.println(e.getMessage());

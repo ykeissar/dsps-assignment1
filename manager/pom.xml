@@ -37,10 +37,15 @@
             <artifactId>json-simple</artifactId>
             <version>1.1.1</version>
         </dependency>
+        <dependency>
+            <groupId>com.snc.dist.upgrade</groupId>
+            <artifactId>dist-upgrade-glide</artifactId>
+            <version>8.0.3</version>
+        </dependency>
     </dependencies>
     <build>
         <plugins>
-            <plugin>
+        <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-dependency-plugin</artifactId>
                 <executions>
@@ -66,7 +71,7 @@
                         <manifest>
                             <addClasspath>true</addClasspath>
                             <mainClass>
-                                ManagerMainClassTwo
+                                ManagerMainClass
                             </mainClass>
                         </manifest>
                     </archive>

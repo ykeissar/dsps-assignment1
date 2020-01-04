@@ -15,32 +15,28 @@ import com.amazonaws.services.s3.model.S3Object;
 import com.amazonaws.services.s3.model.S3ObjectInputStream;
 import com.amazonaws.services.sqs.AmazonSQS;
 import com.amazonaws.services.sqs.AmazonSQSClientBuilder;
-import com.amazonaws.services.sqs.model.CreateQueueRequest;
-import com.amazonaws.services.sqs.model.Message;
-import com.amazonaws.services.sqs.model.ReceiveMessageRequest;
-import com.amazonaws.services.sqs.model.SendMessageRequest;
+import com.amazonaws.services.sqs.model.*;
 import org.apache.commons.codec.binary.Base64;
 
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 public class LocalApp {
+    private static final String IAM_ARN = "arn:aws:iam::592374997611:instance-profile/admin";
+    private static final String AMI = "ami-00221e3ef03dfd01b";
+    private static final String KEY_PAIR = "my_key3";
+    private static final String MANAGER_QUEUE = "LocalApp-Manager-Queue";
     private AmazonS3 s3;
     private AmazonEC2 ec2;
     private AWSCredentialsProvider credentialsProvider;
     private String bucketName = null;
     private AmazonSQS sqs;
     private String queueUrl = null;
-    private boolean terminate = false;//TODO check when to terminate exactly!!
     private AmazonIdentityManagement iam;
-    private static final String ARN = "arn:aws:iam::592374997611:instance-profile/admin";
-    private static final String AMI = "ami-00221e3ef03dfd01b";
-    private static final String KEY_PAIR = "my_key3";
-    private String lpId = UUID.randomUUID().toString();
-    private Queue<String> testManagerQueue = new LinkedList<String>();
-    private String managerJar = "https://github.com/ykeissar/assignment1/raw/master/manager-1.0-SNAPSHOT.jar";
+    private int workerMessageRatio;
 
-    public LocalApp() {
+    public LocalApp(int workerMessageRatio) {
         try {
             credentialsProvider = new AWSStaticCredentialsProvider(new ProfileCredentialsProvider().getCredentials());
 
@@ -58,9 +54,7 @@ public class LocalApp {
                     .withRegion(Regions.US_WEST_2)
                     .build();
 
-
-//        iam =
-//                AmazonIdentityManagementClientBuilder.defaultClient();
+            this.workerMessageRatio = workerMessageRatio;
         } catch (AmazonServiceException ase) {
             System.out.println("Caught Exception: " + ase.getMessage());
             System.out.println("Reponse Status Code: " + ase.getStatusCode());
@@ -72,13 +66,11 @@ public class LocalApp {
     }
 
     public void terminate() {
-        //TODO add content
-        terminate = true;
-
-    }
-
-    public boolean shouldTerminate() {
-        return terminate;
+        sqs.deleteQueue(new DeleteQueueRequest(queueUrl));
+        System.out.println("Deleting queue " + queueUrl);
+        //
+        s3.deleteBucket(bucketName);
+        System.out.println("Deleting bucket " + bucketName);
     }
 
     public String getBucketName() {
@@ -103,7 +95,7 @@ public class LocalApp {
     }
 
     //----------------------------------EC2---------------------------------
-    public Instance doesManagerActive() {
+    public Instance getManagerInstance() {
         try {
             boolean done = false;
             DescribeInstancesRequest request = new DescribeInstancesRequest();
@@ -115,7 +107,6 @@ public class LocalApp {
                 DescribeInstancesResult response = ec2.describeInstances(request);
                 for (Reservation reservation : response.getReservations()) {
                     if (!reservation.getInstances().isEmpty()) {
-                        done = true;
                         return reservation.getInstances().get(0);
                     }
                 }
@@ -136,32 +127,28 @@ public class LocalApp {
         return null;
     }
 
-    public Instance getManager(int workerMessageRatio) {//TODO add logs
+    public void startManager(int workerMessageRatio) {//TODO add logs
         try {
-            Instance manager = doesManagerActive();
-            if (manager != null)
-                return manager;
             RunInstancesRequest request = new RunInstancesRequest(AMI, 1, 1);
             request.setInstanceType(InstanceType.T1Micro.toString());
             request.setKeyName(KEY_PAIR);
 
+            queueUrl = createQueue();
+            request.setAdditionalInfo(queueUrl);
+
             IamInstanceProfileSpecification iam = new IamInstanceProfileSpecification();
-            iam.setArn(ARN);
+            iam.setArn(IAM_ARN);
             request.setIamInstanceProfile(iam);
 
             String workerRatio = Integer.toString(workerMessageRatio);
-            System.out.println("Queue: "+getQueueUrl());
             String bootstrapManager = new StringBuilder()
                     .append("#! /bin/bash\n")
-                    .append("aws s3 cp s3://yoavsbucke83838/manager-1.0-SNAPSHOT.jar manager-1.0-SNAPSHOT.jar ")
-                    .append("cd ../../\n")
+                    .append("aws s3 cp s3://yoavsbucke83838/manager-1.0-SNAPSHOT.jar manager-1.0-SNAPSHOT.jar\n")
                     .append("\njava -jar manager-1.0-SNAPSHOT.jar ")
-                    .append(getQueueUrl())
+                    .append(queueUrl)
                     .append(" ")
                     .append(workerRatio)
                     .toString();
-
-            //TODO run Manager jar with correct args
 
             String base64BootstrapManager = null;
             try {
@@ -170,46 +157,39 @@ public class LocalApp {
                 e.printStackTrace();
             }
 
-// Manager userdata
-//        String getProject = "wget https://github.com/amirtal75/Mevuzarot/archive/master.zip\n";
-//        String unzip = getProject + "unzip master.zip\n";
-//        String goToProjectDirectory = unzip + "cd Mevuzarot-master/Project1/\n";
-//        String removeSuperPom = goToProjectDirectory + "sudo rm pom.xml\n";
-//        String setWorkerPom = removeSuperPom + "sudo cp managerpom.xml pom.xml\n";
-//        String buildProject = setWorkerPom + "sudo mvn -T 4 install\n";
-//        String createAndRunProject = "sudo java -jar target/core-java-1.0-SNAPSHOT.jar\n";
-//
-//        String createManagerArgsFile = "touch src/main/java/managerArgs.txt\n";
-//        String pushFirstArg =  createManagerArgsFile + "echo " + QueueUrlLocalApps + " >> src/main/java/managerArgs.txt\n";
-//        String filedata = pushFirstArg + "echo " + summeryFilesIndicatorQueue + " >> src/main/java/managerArgs.txt\n";
-//
-//        String userdata = "#!/bin/bash\n" +  buildProject + filedata +createAndRunProject;
-//
-//        System.out.println("Local Queue: " + QueueUrlLocalApps + ", Summary Queue: " + summeryFilesIndicatorQueue);
-//        System.out.println("UserData: " + userdata)
-
             request.setUserData(base64BootstrapManager);
-          //  Instance i = ec2.runInstances(request).getReservation().getInstances().get(0);
+            Instance i = ec2.runInstances(request).getReservation().getInstances().get(0);
 
-//            List<String> ids = new ArrayList<String>();
-//            ids.add(i.getInstanceId());
-//
-//            List<Tag> tags = new ArrayList<Tag>();
-//            tags.add(new Tag("Owner", "Amir_Yoav"));
-//            tags.add(new Tag("App", "Manager"));
-//            CreateTagsRequest tagsRequest = new CreateTagsRequest(ids, tags);
-//            ec2.createTags(tagsRequest);
-//            return i;
-            return null;
+            List<String> ids = new ArrayList<String>();
+            ids.add(i.getInstanceId());
+
+            List<Tag> tags = new ArrayList<Tag>();
+            tags.add(new Tag("App", "Manager"));
+            CreateTagsRequest tagsRequest = new CreateTagsRequest(ids, tags);
+            ec2.createTags(tagsRequest);
         } catch (AmazonServiceException ase) {
             System.out.println("Caught Exception: " + ase.getMessage());
             System.out.println("Reponse Status Code: " + ase.getStatusCode());
             System.out.println("Error Code: " + ase.getErrorCode());
             System.out.println("Request ID: " + ase.getRequestId());
-
         }
-        getQueueUrl();
-        return null;
+    }
+
+    public void terminateManager() {
+        //send termination message to Manager
+        sendMessage("Terminate");
+        try {
+            TimeUnit.SECONDS.sleep(10);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        //terminate manager node
+        Instance manager = getManagerInstance();
+        StopInstancesRequest request = new StopInstancesRequest();
+        List<String> ids = new ArrayList<String>();
+        ids.add(manager.getInstanceId());
+        request.setInstanceIds(ids);
+        ec2.stopInstances(request);
     }
 
     //----------------------------------S3----------------------------------
@@ -238,7 +218,7 @@ public class LocalApp {
 
     public String downloadFile(String key) {
         try {
-            System.out.println(new StringBuilder("Downloading an object from bucket name - %s, key - %s").append(bucketName).append(key).toString());
+            System.out.println(new StringBuilder("Downloading an object from bucket name - ").append(bucketName).append(",").append("key - ").append(key).toString());
             S3Object object = s3.getObject(new GetObjectRequest(bucketName, key));
             S3ObjectInputStream inputStream = object.getObjectContent();
 
@@ -253,8 +233,9 @@ public class LocalApp {
                 bufferedReader.close();
                 inputStream.close();
             } catch (IOException e) {
-                System.out.println(new StringBuilder("Exception while downloading from key %s, with reading buffer. Error: %s")
+                System.out.println(new StringBuilder("Exception while downloading from key")
                         .append(key)
+                        .append(" with reading buffer, Error: ")
                         .append(e.getMessage())
                         .toString());
             }
@@ -270,17 +251,16 @@ public class LocalApp {
         return null;
     }
 
-    //----------------------------------SQS---------------------------------
+    public void deleteObject(String key) {
 
-    public String getQueueUrl() {
-        if (queueUrl == null)
-            queueUrl = createQueue();
-        return queueUrl;
+        s3.deleteObject(bucketName, key);
     }
+
+    //----------------------------------SQS---------------------------------
 
     private String createQueue() {
         try {
-            CreateQueueRequest createQueueRequest = new CreateQueueRequest("MyQueue" + UUID.randomUUID());
+            CreateQueueRequest createQueueRequest = new CreateQueueRequest(MANAGER_QUEUE);
             String myQueueUrl = sqs.createQueue(createQueueRequest).getQueueUrl();
             System.out.println(String.format("Creating Sqs queue with url - %s.", myQueueUrl));
 
@@ -297,11 +277,11 @@ public class LocalApp {
 
     public void sendMessage(String message) {
         try {
-            sqs.sendMessage(new SendMessageRequest(getQueueUrl(), message));
+            sqs.sendMessage(new SendMessageRequest(queueUrl, message));
             System.out.println(new StringBuilder("Sending message '")
                     .append(message)
                     .append("' to queue with url - ")
-                    .append(getQueueUrl())
+                    .append(queueUrl)
                     .toString());
         } catch (AmazonServiceException ase) {
             System.out.println("Caught Exception: " + ase.getMessage());
@@ -315,7 +295,7 @@ public class LocalApp {
     public String readMessagesLookFor(String lookFor) {
         try {
             ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl);
-
+            receiveMessageRequest.withWaitTimeSeconds(10);
             List<Message> messages = sqs.receiveMessage(receiveMessageRequest).getMessages();
             for (Message message : messages) {
                 if (message.getBody().contains(lookFor)) {
@@ -334,15 +314,17 @@ public class LocalApp {
 
     }
 
-    public static void main(String[] args) {
-        LocalApp lp = new LocalApp();
-        lp.getManager(7);
-        while(true) {
-            String m = lp.readMessagesLookFor("");
-            if (m != null && m.length() > 0){
-                System.out.println(m);
-                 break;
-            }
+    public void getManagerQueue() {
+        try{
+            GetQueueUrlResult result = sqs.getQueueUrl(MANAGER_QUEUE);
+            queueUrl = result.getQueueUrl();
+        }catch (AmazonServiceException ase){
+            startManager(workerMessageRatio);
         }
+    }
+
+    public static void main(String[] args){
+        LocalApp lp = new LocalApp(5);
+        lp.getManagerQueue();
     }
 }

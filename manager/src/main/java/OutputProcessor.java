@@ -25,7 +25,7 @@ public class OutputProcessor implements Runnable {
 
         do {
             current = output.get();
-            updated = current + "\n" + message.getBody();
+            updated = current + "<p>"+trimProcessedAndId(message.getBody())+"</p>";
         } while (!output.compareAndSet(current, updated));
 
 
@@ -33,9 +33,13 @@ public class OutputProcessor implements Runnable {
         int updatedCount;
         do {
             currentCount = messageCount.get();
-            updatedCount = currentCount++;
+            updatedCount = currentCount+1;
         } while (!messageCount.compareAndSet(currentCount, updatedCount));
 
         manager.deleteMessage(message, queueUrl);
+    }
+
+    private String trimProcessedAndId(String cont){
+        return cont.substring(cont.indexOf("<"));
     }
 }
