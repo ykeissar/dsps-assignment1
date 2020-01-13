@@ -8,8 +8,8 @@ public class WorkerMainClass {
             Message message = worker.readMessagesLookForFirstLine("UNPROCESSED");
             if (message != null) {
                 String content = message.getBody().substring(message.getBody().indexOf("\n"));
-                String id = content.substring(1,2);
-                String processedReview = worker.tempProcessReview(content);//TODO finish processReview and CHANGE METHOD CALLED HERE
+                String id = content.substring(1, content.indexOf("\n", 1));
+                String processedReview = worker.processReview(content);//TODO finish processReview and CHANGE METHOD CALLED HERE
                 worker.sendMessage("PROCESSED\n" + id + "\n" + processedReview);
                 worker.deleteMessage(message);
             }

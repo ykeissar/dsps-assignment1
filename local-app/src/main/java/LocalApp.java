@@ -6,7 +6,6 @@ import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
 import com.amazonaws.services.ec2.model.*;
-import com.amazonaws.services.identitymanagement.AmazonIdentityManagement;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.GetObjectRequest;
@@ -19,21 +18,23 @@ import com.amazonaws.services.sqs.model.*;
 import org.apache.commons.codec.binary.Base64;
 
 import java.io.*;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 public class LocalApp {
     private static final String IAM_ARN = "arn:aws:iam::592374997611:instance-profile/admin";
     private static final String AMI = "ami-00221e3ef03dfd01b";
     private static final String KEY_PAIR = "my_key3";
-    private static final String MANAGER_QUEUE = "LocalApp-Manager-Queue";
+    private static final String MANAGER_QUEUE = "LocalApp-Manager-Queue1";
+    private static final String INSTANCE_TYPE = InstanceType.T3Small.toString();
+
     private AmazonS3 s3;
     private AmazonEC2 ec2;
     private AWSCredentialsProvider credentialsProvider;
     private String bucketName = null;
     private AmazonSQS sqs;
     private String queueUrl = null;
-    private AmazonIdentityManagement iam;
     private int workerMessageRatio;
 
     public LocalApp(int workerMessageRatio) {
@@ -60,17 +61,13 @@ public class LocalApp {
             System.out.println("Reponse Status Code: " + ase.getStatusCode());
             System.out.println("Error Code: " + ase.getErrorCode());
             System.out.println("Request ID: " + ase.getRequestId());
-
         }
-
     }
 
     public void terminate() {
-        sqs.deleteQueue(new DeleteQueueRequest(queueUrl));
-        System.out.println("Deleting queue " + queueUrl);
-        //
         s3.deleteBucket(bucketName);
         System.out.println("Deleting bucket " + bucketName);
+        System.out.println("Shutting down...");
     }
 
     public String getBucketName() {
@@ -78,6 +75,7 @@ public class LocalApp {
     }
 
     public void toHtml(String content, String address) {
+        System.out.println("Creating html file from output");
         String html = new StringBuilder().append("<!DOCTYPE html>\n")
                 .append("<html>\n")
                 .append("<body>\n")
@@ -97,6 +95,7 @@ public class LocalApp {
     //----------------------------------EC2---------------------------------
     public Instance getManagerInstance() {
         try {
+            System.out.println("Fetching Manager node.");
             boolean done = false;
             DescribeInstancesRequest request = new DescribeInstancesRequest();
             List<String> tags = new ArrayList<String>();
@@ -130,11 +129,10 @@ public class LocalApp {
     public void startManager(int workerMessageRatio) {//TODO add logs
         try {
             RunInstancesRequest request = new RunInstancesRequest(AMI, 1, 1);
-            request.setInstanceType(InstanceType.T1Micro.toString());
+            request.setInstanceType(INSTANCE_TYPE);
             request.setKeyName(KEY_PAIR);
 
-            queueUrl = createQueue();
-            request.setAdditionalInfo(queueUrl);
+            createQueue();
 
             IamInstanceProfileSpecification iam = new IamInstanceProfileSpecification();
             iam.setArn(IAM_ARN);
@@ -143,8 +141,9 @@ public class LocalApp {
             String workerRatio = Integer.toString(workerMessageRatio);
             String bootstrapManager = new StringBuilder()
                     .append("#! /bin/bash\n")
-                    .append("aws s3 cp s3://yoavsbucke83838/manager-1.0-SNAPSHOT.jar manager-1.0-SNAPSHOT.jar\n")
-                    .append("\njava -jar manager-1.0-SNAPSHOT.jar ")
+                    .append("cd /home/ec2-user\n")
+                    .append("aws s3 cp s3://yoavsbucke83838/manager.jar manager.jar\n")
+                    .append("java -jar manager.jar ")
                     .append(queueUrl)
                     .append(" ")
                     .append(workerRatio)
@@ -158,6 +157,7 @@ public class LocalApp {
             }
 
             request.setUserData(base64BootstrapManager);
+            System.out.println("Starting Manager node.");
             Instance i = ec2.runInstances(request).getReservation().getInstances().get(0);
 
             List<String> ids = new ArrayList<String>();
@@ -177,6 +177,7 @@ public class LocalApp {
 
     public void terminateManager() {
         //send termination message to Manager
+        System.out.println("Terminating Manager node.");
         sendMessage("Terminate");
         try {
             TimeUnit.SECONDS.sleep(10);
@@ -190,6 +191,9 @@ public class LocalApp {
         ids.add(manager.getInstanceId());
         request.setInstanceIds(ids);
         ec2.stopInstances(request);
+
+        sqs.deleteQueue(new DeleteQueueRequest(queueUrl));
+        System.out.println("Deleting queue " + queueUrl);
     }
 
     //----------------------------------S3----------------------------------
@@ -197,11 +201,15 @@ public class LocalApp {
     public String uploadFile(File file) {
         try {
             if (bucketName == null) {
-                bucketName =
-                        credentialsProvider.getCredentials().getAWSAccessKeyId().replace('/', '_').replace(':', '_').toLowerCase();
+                bucketName = credentialsProvider.getCredentials().getAWSAccessKeyId().replace('/', '_').replace(':', '_').toLowerCase();
                 System.out.println(String.format("Creating bucket %s.", bucketName));
-                s3.createBucket(bucketName);
-            }//TODO add logs
+                try{
+                    s3.createBucket(bucketName);
+                }catch (AmazonServiceException ase){
+                    System.out.println("Caught Exception: " + ase.getMessage());
+                }
+
+            }
             String key = file.getName().replace('\\', '_').replace('/', '_').replace(':', '_');
             PutObjectRequest req = new PutObjectRequest(bucketName, key, file);
             s3.putObject(req);
@@ -258,13 +266,13 @@ public class LocalApp {
 
     //----------------------------------SQS---------------------------------
 
-    private String createQueue() {
+    public void createQueue() {
         try {
             CreateQueueRequest createQueueRequest = new CreateQueueRequest(MANAGER_QUEUE);
             String myQueueUrl = sqs.createQueue(createQueueRequest).getQueueUrl();
             System.out.println(String.format("Creating Sqs queue with url - %s.", myQueueUrl));
 
-            return myQueueUrl;
+            queueUrl = myQueueUrl;
         } catch (AmazonServiceException ase) {
             System.out.println("Caught Exception: " + ase.getMessage());
             System.out.println("Reponse Status Code: " + ase.getStatusCode());
@@ -272,7 +280,6 @@ public class LocalApp {
             System.out.println("Request ID: " + ase.getRequestId());
 
         }
-        return null;
     }
 
     public void sendMessage(String message) {
@@ -292,17 +299,18 @@ public class LocalApp {
         }
     }
 
-    public String readMessagesLookFor(String lookFor) {
+    public Message readMessagesLookFor(String lookFor) {
         try {
             ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl);
-            receiveMessageRequest.withWaitTimeSeconds(10);
+            receiveMessageRequest.withWaitTimeSeconds(5);
+            receiveMessageRequest.setVisibilityTimeout(0);
             List<Message> messages = sqs.receiveMessage(receiveMessageRequest).getMessages();
             for (Message message : messages) {
                 if (message.getBody().contains(lookFor)) {
-                    return message.getBody();
+                    return message;
                 }
             }
-            return "";
+            return null;
         } catch (AmazonServiceException ase) {
             System.out.println("Caught Exception: " + ase.getMessage());
             System.out.println("Reponse Status Code: " + ase.getStatusCode());
@@ -314,17 +322,16 @@ public class LocalApp {
 
     }
 
-    public void getManagerQueue() {
-        try{
-            GetQueueUrlResult result = sqs.getQueueUrl(MANAGER_QUEUE);
-            queueUrl = result.getQueueUrl();
-        }catch (AmazonServiceException ase){
-            startManager(workerMessageRatio);
-        }
+    public void deleteMessage(Message message) {
+        sqs.deleteMessage(new DeleteMessageRequest(queueUrl, message.getReceiptHandle()));
     }
 
-    public static void main(String[] args){
-        LocalApp lp = new LocalApp(5);
-        lp.getManagerQueue();
+    public void setManagerQueue() {
+        try {
+            GetQueueUrlResult result = sqs.getQueueUrl(MANAGER_QUEUE);
+            queueUrl = result.getQueueUrl();
+        } catch (AmazonServiceException ase) {
+            startManager(workerMessageRatio);
+        }
     }
 }

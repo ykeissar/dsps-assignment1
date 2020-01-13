@@ -1,7 +1,6 @@
 import com.amazonaws.services.ec2.model.Instance;
 import com.amazonaws.services.sqs.model.Message;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -40,7 +39,11 @@ public class OutputHandler implements Runnable {
                 if (!messagesProcessed.get(id)) {
                     readersPool.execute(new OutputProcessor(queueUrl, manager, output, message, currentMessageCount));
                     messagesProcessed.put(id, true);
+                    System.out.println("Input n. "+this.id+", Review n. "+id+" processed. ("+(currentMessageCount.get()+1)+"/"+expectedMessageCount+")");
                 }
+                else
+                    manager.deleteMessage(message, queueUrl);
+
             }
 
         } while (currentMessageCount.get() < expectedMessageCount);

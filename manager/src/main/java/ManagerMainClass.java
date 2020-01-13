@@ -1,9 +1,11 @@
 import com.amazonaws.services.sqs.model.Message;
 
+import java.io.File;
+
 public class ManagerMainClass {
     public static void main(String[] args) {
         Manager manager = new Manager(args[0], Integer.valueOf(args[1]));
-
+        System.out.println("Listening for messages...");
         while (true) {
             //listen to the sqs queue
             Message message = manager.readMessagesLookFor("Input_location", manager.getLocalAppQueueUrl());
@@ -15,19 +17,20 @@ public class ManagerMainClass {
                 int id = Integer.parseInt(content.split(" ")[5]);
                 manager.insertToInputBuckets(bucketName, id);
 
-                String fileContent = manager.downloadFile(bucketName, key);
+                File inputFile = manager.downloadFile(bucketName, key);
 
                 manager.deleteObject(bucketName,key);
 
-                manager.processInput(fileContent, id);
-
                 manager.deleteMessage(message, manager.getLocalAppQueueUrl());
+
+                manager.processInput(inputFile, id);
             }
 
             message = manager.readMessagesLookFor("Terminate", manager.getLocalAppQueueUrl());
             if (message != null)
                 break;
         }
+
         manager.terminate();
     }
 }
