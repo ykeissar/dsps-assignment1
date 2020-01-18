@@ -1,7 +1,4 @@
 import com.amazonaws.AmazonServiceException;
-import com.amazonaws.auth.AWSCredentialsProvider;
-import com.amazonaws.auth.AWSStaticCredentialsProvider;
-import com.amazonaws.auth.profile.ProfileCredentialsProvider;
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.ec2.AmazonEC2;
 import com.amazonaws.services.ec2.AmazonEC2ClientBuilder;
@@ -22,9 +19,16 @@ import java.io.*;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.logging.FileHandler;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 
 public class Manager {
+    private final String IAM_ARN = "arn:aws:iam::592374997611:instance-profile/Worker";
+    private final String AMI = "ami-00221e3ef03dfd01b";
+    private final String KEY = "my_key3";
+    private final String INSTANCE_TYPE = InstanceType.T3Xlarge.toString();
     private AmazonS3 s3;
     private AmazonEC2 ec2;
     private AmazonSQS sqs;
@@ -34,19 +38,17 @@ public class Manager {
     private int workersRatio;
     private Map<Integer, String> inputBuckets = new HashMap<Integer, String>();
     private Map<String, Integer> reverseInputBuckets = new HashMap<String, Integer>();
-    //private AWSCredentialsProvider credentialsProvider;//TODO delete
-    private final String IAM_ARN = "arn:aws:iam::592374997611:instance-profile/Worker";
-    private final String AMI = "ami-00221e3ef03dfd01b";
-    private final String KEY = "my_key3";
-    private final String INSTANCE_TYPE = InstanceType.T2Xlarge.toString();
+    private int idCounter = 0;
+    private Map<Integer, String> localAppQueueMap = new HashMap<Integer, String>();
+    private Set<Pair> workinProgress = new HashSet<Pair>();
+    private Logger logger;
 
 
     public Manager(String queueUrl, int workersRatio) {
-        //credentialsProvider = new AWSStaticCredentialsProvider(new ProfileCredentialsProvider().getCredentials()); //TODO delete
-
         s3 = AmazonS3ClientBuilder.standard()
                 .withRegion(Regions.US_WEST_2)
                 .build();
+
         ec2 = AmazonEC2ClientBuilder.standard()
                 .withRegion(Regions.US_WEST_2)
                 .build();
@@ -57,19 +59,48 @@ public class Manager {
 
         localAppQueueUrl = queueUrl;
         this.workersRatio = workersRatio;
+
+        logger = Logger.getLogger("MyLog");
+        FileHandler fh;
+
+        try {
+
+            // This block configure the logger with handler and formatter
+            fh = new FileHandler("/home/ec2-user/log.txt");
+            logger.addHandler(fh);
+            SimpleFormatter formatter = new SimpleFormatter();
+            fh.setFormatter(formatter);
+
+            // the following statement is used to log any messages
+            logger.info("Logger Stated!");
+
+        } catch (SecurityException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        logger.info("Manager started at: " + new Date(System.currentTimeMillis()));
+    }
+
+    public int getNextId() {
+        return idCounter++;
+    }
+
+    public void addLocalApp(int id, String queue) {
+        localAppQueueMap.put(id, queue);
     }
 
     public String getLocalAppQueueUrl() {
         return localAppQueueUrl;
     }
 
-    public void processInput(File input, int id) {
-        System.out.println("Start processing input "+id);
-        inputReadingPool.execute(new InputProcessor(input, this, id));
+    public void processInput(File input, int id, int appId) {
+        logger.info("Start processing input " + id);
+        workinProgress.add(new Pair(appId, id));
+        inputReadingPool.execute(new InputProcessor(input, this, id, appId));
     }
 
     public void insertToInputBuckets(String bucketName, int id) {
-
         inputBuckets.put(id, bucketName);
         reverseInputBuckets.put(bucketName, id);
     }
@@ -78,99 +109,95 @@ public class Manager {
         return inputBuckets.get(id);
     }
 
-    public void processOutput(String queueUrl, int id, int messageCount, Map<Integer, Boolean> messagesProcessed, List<Instance> workers) {
-        System.out.println("Start processing output "+id);
-        outputReadingPool.execute(new OutputHandler(queueUrl, this, id, messageCount, messagesProcessed, workers));
+    public void processOutput(String processedUrl, String unprocessedUrl, int id, int messageCount, Map<Integer, Boolean> messagesProcessed, List<Instance> workers, int appId) {
+        logger.info("Start processing output " + id);
+        outputReadingPool.execute(new OutputHandler(processedUrl, unprocessedUrl, this, id, messageCount, messagesProcessed, workers, messageCount / workersRatio, appId));
     }
 
     //----------------------------------EC2---------------------------------
-    public List<Instance> runNWorkers(String queueUrl, int messageCount) {
-        boolean workersStarted = false;
+    public List<Instance> runNWorkers(String processedUrl, String unprocessedUrl, int numOfWorkers, int appId, int inputId) {
         List<Instance> workers = new ArrayList<Instance>();
 
-        while(!workersStarted) {
-            workersStarted = true;
-            RunInstancesRequest request = new RunInstancesRequest(AMI, 1, messageCount / workersRatio);
-            request.setInstanceType(INSTANCE_TYPE);
-            request.setKeyName(KEY);
+        RunInstancesRequest request = new RunInstancesRequest(AMI, 1, numOfWorkers);
+        request.setInstanceType(INSTANCE_TYPE);
+        request.setKeyName(KEY);
 
-            List<String> jarsToDownloand = new ArrayList<String>();
-            jarsToDownloand.add("worker.jar");
-            jarsToDownloand.add("ejml-0.23.jar");
-            jarsToDownloand.add("stanford-corenlp-3.9.2.jar");
-            jarsToDownloand.add("stanford-corenlp-3.9.2-models.jar");
-            jarsToDownloand.add("jollyday.jar");
+        List<String> jarsToDownloand = new ArrayList<String>();
+        jarsToDownloand.add("worker.jar");
+        jarsToDownloand.add("ejml-0.23.jar");
+        jarsToDownloand.add("stanford-corenlp-3.9.2.jar");
+        jarsToDownloand.add("stanford-corenlp-3.9.2-models.jar");
+        jarsToDownloand.add("jollyday.jar");
 
-
-            StringBuilder userData = new StringBuilder().append("#! /bin/bash\n").append("cd /home/ec2-user\n");
-            for (String jar : jarsToDownloand) {
-                userData.append("aws s3 cp s3://yoavsbucke83838/").append(jar).append(" ").append(jar).append("\n");
-            }
-            userData.append("java -cp .:").append(jarsToDownloand.get(0))
-                    .append(":")
-                    .append(jarsToDownloand.get(1))
-                    .append(":")
-                    .append(jarsToDownloand.get(2))
-                    .append(":")
-                    .append(jarsToDownloand.get(3))
-                    .append(":")
-                    .append(jarsToDownloand.get(4))
-                    .append(" WorkerMainClass ")
-                    .append(queueUrl);//TODO stanford jars?
-
-            String bootstrapManager = userData.toString();
-            String base64BootstrapManager = null;
-            try {
-                base64BootstrapManager = new String(Base64.encodeBase64(bootstrapManager.getBytes("UTF-8")), "UTF-8");
-            } catch (UnsupportedEncodingException e) {
-                e.printStackTrace();
-            }
-
-            request.setUserData(base64BootstrapManager);
-            IamInstanceProfileSpecification iam = new IamInstanceProfileSpecification();
-            iam.setArn(IAM_ARN);
-            request.setIamInstanceProfile(iam);
-
-            System.out.println("Starting " + messageCount / workersRatio + " worker" + ((messageCount / workersRatio == 1) ? "." : "s."));
-            try {
-                workers = ec2.runInstances(request).getReservation().getInstances();
-            } catch (AmazonServiceException ase) {
-                System.out.println("Caught Exception: " + ase.getMessage());
-                System.out.println("Reponse Status Code: " + ase.getStatusCode());
-                System.out.println("Error Code: " + ase.getErrorCode());
-                System.out.println("Request ID: " + ase.getRequestId());
-                workersStarted = false;
-            }
-
-            List<String> ids = new ArrayList<String>();
-            for (Instance worker : workers)
-                ids.add(worker.getInstanceId());
-
-            List<Tag> tags = new ArrayList<Tag>();
-            tags.add(new Tag("App", "Worker"));
-            CreateTagsRequest tagsRequest = new CreateTagsRequest(ids, tags);
-            ec2.createTags(tagsRequest);
+        //setting workrs user-data
+        StringBuilder userData = new StringBuilder().append("#! /bin/bash\n").append("cd /home/ec2-user\n");
+        for (String jar : jarsToDownloand) {
+            userData.append("aws s3 cp s3://yoavsbucke83838/").append(jar).append(" ").append(jar).append("\n");
         }
+        userData.append("java -cp .:").append(jarsToDownloand.get(0))
+                .append(":")
+                .append(jarsToDownloand.get(1))
+                .append(":")
+                .append(jarsToDownloand.get(2))
+                .append(":")
+                .append(jarsToDownloand.get(3))
+                .append(":")
+                .append(jarsToDownloand.get(4))
+                .append(" WorkerMainClass ")
+                .append(processedUrl)
+                .append(" ")
+                .append(unprocessedUrl);
+
+        String bootstrapManager = userData.toString();
+        String base64BootstrapManager = null;
+        try {
+            base64BootstrapManager = new String(Base64.encodeBase64(bootstrapManager.getBytes("UTF-8")), "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            e.printStackTrace();
+        }
+
+        request.setUserData(base64BootstrapManager);
+        IamInstanceProfileSpecification iam = new IamInstanceProfileSpecification();
+        iam.setArn(IAM_ARN);
+        request.setIamInstanceProfile(iam);
+
+        try {
+            workers = ec2.runInstances(request).getReservation().getInstances();
+        } catch (AmazonServiceException ase) {
+            return workers;
+        }
+
+        List<String> ids = new ArrayList<String>();
+        for (Instance worker : workers)
+            ids.add(worker.getInstanceId());
+
+        //setting workers tags
+        List<Tag> tags = new ArrayList<Tag>();
+        String inputIds = "App-" + appId + "_Input-" + inputId;
+        tags.add(new Tag("App", "Worker"));
+        tags.add(new Tag("InputIds", inputIds));
+        CreateTagsRequest tagsRequest = new CreateTagsRequest(ids, tags);
+        ec2.createTags(tagsRequest);
+
         return workers;
 
     }
 
     public void shutdownWorkers(List<Instance> instances) {
-        StopInstancesRequest request = new StopInstancesRequest();
+        TerminateInstancesRequest request = new TerminateInstancesRequest();
         List<String> ids = new ArrayList<String>();
         for (Instance worker : instances)
             ids.add(worker.getInstanceId());
         request.setInstanceIds(ids);
-        ec2.stopInstances(request);
+        ec2.terminateInstances(request);
     }
 
-    //----------------------------------SQS--------------------------------- //TODO SQS Visibility Time-out - find out whats next
+    //----------------------------------SQS---------------------------------
 
-    public String createQueue() {
-        CreateQueueRequest createQueueRequest = new CreateQueueRequest("MyQueue" + UUID.randomUUID());
+    public String createQueue(String name) {
+        CreateQueueRequest createQueueRequest = new CreateQueueRequest(name + "_" + UUID.randomUUID());
         String myQueueUrl = sqs.createQueue(createQueueRequest).getQueueUrl();
-        System.out.println(String.format("Creating Sqs queue with url - %s.", myQueueUrl));
-
+        logger.info(String.format("Creating Sqs queue with url - %s.", myQueueUrl));
         return myQueueUrl;
     }
 
@@ -180,7 +207,7 @@ public class Manager {
 
     public void sendMessage(String message, String queueUrl) {
         sqs.sendMessage(new SendMessageRequest(queueUrl, message));
-        System.out.println(String.format("Sending message '%s' to queue with url - %s.", message, queueUrl));
+        logger.info(String.format("Sending message '%s' to queue with url - %s.", message, queueUrl));
     }
 
     public void deleteMessage(Message message, String queueUrl) {
@@ -191,11 +218,10 @@ public class Manager {
         ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl);
         receiveMessageRequest.setMaxNumberOfMessages(1);
         receiveMessageRequest.setWaitTimeSeconds(5);
-
+        receiveMessageRequest.setVisibilityTimeout(0);
         List<Message> messages = sqs.receiveMessage(receiveMessageRequest).getMessages();
         for (Message message : messages) {
             if (message.getBody().contains(lookFor)) {
-                sqs.changeMessageVisibility(queueUrl,message.getReceiptHandle(),100);
                 return message;
             }
         }
@@ -223,13 +249,12 @@ public class Manager {
     public File downloadFile(String bucketName, String key) {
         File file = null;
         try {
-            System.out.println(String.format("Downloading an object from bucket name - %s, key - %s", bucketName, key));
+            logger.info(String.format("Downloading an object from bucket name - %s, key - %s", bucketName, key));
             S3Object object = s3.getObject(new GetObjectRequest(bucketName, key));
             S3ObjectInputStream inputStream = object.getObjectContent();
 
             BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream));
-            //int localAppId = reverseInputBuckets.get(bucketName);
-            file = new File(key+".txt");
+            file = new File(key + ".txt");
 
             Writer writer = new OutputStreamWriter(new FileOutputStream(file));
             while (true) {
@@ -242,18 +267,14 @@ public class Manager {
             }
             writer.close();
         } catch (IOException e) {
-            System.out.println(e.getCause());
-            System.out.println(e.getMessage());
+            logger.info(e.getMessage());
         }
         return file;
     }
 
-
-    public String uploadFile(String bucketName, String cont, int outPutId) {
-        //TODO add logs
-        String key = "output_file_number " + outPutId + ".txt";
-        int localAppId = reverseInputBuckets.get(bucketName);
-        String localPath = "output_" + localAppId + "/" + key;
+    public String uploadFile(String bucketName, String cont, int outputId, int appId) {
+        String key = "output_file_number " + outputId + ".txt";
+        String localPath = "output_" + appId + "/" + key;
         File file = new File(localPath);
         try {
             FileUtils.writeStringToFile(file, cont);
@@ -266,10 +287,11 @@ public class Manager {
         return key;
     }
 
-    public void uploadOutputFile(String bucketName, String cont, int id) {
-        String key = uploadFile(bucketName, cont, id);
-        sendMessage(id + "\n" + key + "\nOutput in bucket", getLocalAppQueueUrl());//TODO verify indexes are identical!!!!!
-    }//<io index>\n s3object's key\n DSPS_assignment1 output in bucket
+    public void uploadOutputFile(String bucketName, String cont, int id, int appId) {
+        String key = uploadFile(bucketName, cont, id, appId);
+        removePair(appId, id);
+        sendMessage(id + "\n" + key + "\nOutput in bucket", localAppQueueMap.get(appId));
+    }
 
     public void deleteObject(String bucketName, String key) {
 
@@ -277,7 +299,53 @@ public class Manager {
     }
 
     public void terminate() {
+        logger.info("Waiting to finish work");
+        while (!workinProgress.isEmpty()) {
+        }
+        logger.info("All work is done.");
+
         inputReadingPool.shutdown();
         outputReadingPool.shutdown();
+        for (String queue : localAppQueueMap.values())
+            sqs.deleteQueue(new DeleteQueueRequest(queue));
+        sendMessage("Terminating done!", localAppQueueUrl);
+        logger.info("Manager ended at: " + new Date(System.currentTimeMillis()));
+
+    }
+
+    private void removePair(int appId, int id) {
+        for (Pair p : workinProgress) {
+            if (p.getFirst() == appId && p.getSecond() == id) {
+                workinProgress.remove(p);
+                break;
+            }
+        }
+    }
+
+    public int getWorkersRatio() {
+        return workersRatio;
+    }
+
+    public void log(String s) {
+        logger.info(s);
+    }
+
+    public static class Pair {
+        private int first;
+        private int second;
+
+        public Pair(int appId, int id) {
+            first = appId;
+            second = id;
+        }
+
+        public int getFirst() {
+            return first;
+        }
+
+        public int getSecond() {
+            return second;
+        }
+
     }
 }

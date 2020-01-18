@@ -1,0 +1,34 @@
+To run:
+1. cd to where the local-app.jar is ('./out/artifacts/local_app_jar/')
+2. write 'java -jar local-app.jar inputFileName1… inputFileNameN outputFileName1… outputFileNameN n'
+3. Add terminate if want to terminate manager at the end.
+
+Main Idea:
+1.The local-app accept input and output files paths, and messages-workers ratio.
+2.If the manager node does not exist - creating one and a sqs queue for communication.
+3.The locap-app upload the input files to s3, and sends messages with files locations to the manager threw the queue.
+4.The manager is listinning to the queue, and if accept file location, downloading the file.
+5.A runnable - InputProcessor is created with the downloaded file details, and go into the inputs -executor.
+6. The InputProcessor creating a sqs queue, parsing the file, and send all the reviews as messages to the queueu.
+7. The InputProcessor start workers.
+8.The workers is taking messages from the queue, processing it and sending it back.
+9.In the manager - a runnable - OutputHandler is created and listening to processed messages from workers.
+10.For each processed message, if was not part of the output file yet, a runnable OutputProcessor created and insert the message to the output file.
+11. The manager uploading the output file to the bucket, and sends message with details to the local-app.
+12.Local-ap accept message with output location from manager, download it and create html file.
+13.If started with 'terminate', and all local-app inputs finished, local-app sends 'Terminate' message to manager.
+14.manager- if 'Terminate' message was accepted, waiting for all the jobs finished, and termintaing.
+
+AMI-used - 'ami-00221e3ef03dfd01b'
+instance-type - 't3.xlarge'
+time to process all inputs (1 local) - 18 minutes 
+n - 150
+
+Manadatory Requirements:
+- Security - We did not send our credentials, we used IAM roles for our instances, and the minimal needed.
+- Scalability - We can see that for one file or all files, it took approximately the same time.
+- Presistence - We took care of that, if a worker fails, it wont affect us, because the deleting of messages happends only after he sends the message, so if he could not make it, some other worker will take care of that.
+-All our workers work hard, we took small amount workers and stronger instances.
+We also make sure that we use the maximum amount of workers possible form our defenition and system limitations.
+-The only wating is for the workers work, and due to system limitation of vCPUs.
+

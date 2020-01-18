@@ -18,21 +18,47 @@ import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
 import org.json.simple.parser.ParseException;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
-import java.util.Random;
+import java.io.IOException;
+import java.util.*;
+import java.util.logging.FileHandler;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 
 public class Worker {
-    private String queueUrl;
+    private String processedUrl;
+    private String unprocessedUrl;
     private AmazonSQS sqs;
     private StanfordCoreNLP NERPipeline;
     private StanfordCoreNLP sentimentPipeline;
     private List<String> entitiesToKeep;
+    private Logger logger;
 
-    public Worker(String queueUrl) {
-        this.queueUrl = queueUrl;
+    public Worker(String processedUrl, String unprocessedUrl) {
+        //setup logger
+        logger = Logger.getLogger("MyLog");
+        FileHandler fh;
+
+        try {
+
+            // This block configure the logger with handler and formatter
+            fh = new FileHandler("/home/ec2-user/log.txt");//"/Users/yoav.keissar/Documents/log.txt");
+            logger.addHandler(fh);
+            SimpleFormatter formatter = new SimpleFormatter();
+            fh.setFormatter(formatter);
+
+            // the following statement is used to log any messages
+            logger.info("Logger Stated!");
+
+        } catch (SecurityException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        logger.info("Worker started at: " + new Date(System.currentTimeMillis()));
+
+        this.processedUrl = processedUrl;
+        this.unprocessedUrl = unprocessedUrl;
         sqs = AmazonSQSClientBuilder.standard()
                 .withRegion(Regions.US_WEST_2)
                 .build();
@@ -50,48 +76,45 @@ public class Worker {
         props2.put("annotators", "tokenize, ssplit, parse, sentiment");
         sentimentPipeline = new StanfordCoreNLP(props2);
 
-
     }
 
     //----------------------------------AWS------------------------------------
 
     public Message readMessagesLookForFirstLine(String lookFor) {
         try {
-            ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(queueUrl);
+            ReceiveMessageRequest receiveMessageRequest = new ReceiveMessageRequest(unprocessedUrl);
             receiveMessageRequest.withWaitTimeSeconds(3);
             List<Message> messages = sqs.receiveMessage(receiveMessageRequest).getMessages();
             for (Message message : messages) {
                 String firstLine = message.getBody().substring(0, message.getBody().indexOf("\n"));
                 if (firstLine.equals(lookFor)) {
-                    sqs.changeMessageVisibility(queueUrl, message.getReceiptHandle(), 30);
+                    sqs.changeMessageVisibility(unprocessedUrl, message.getReceiptHandle(), 30);
                     return message;
-                } else
-                    sqs.changeMessageVisibility(queueUrl, message.getReceiptHandle(), 0);
-
+                }
             }
         } catch (AmazonServiceException ase) {
-            System.out.println("Caught Exception: " + ase.getMessage());
-            System.out.println("Reponse Status Code: " + ase.getStatusCode());
-            System.out.println("Error Code: " + ase.getErrorCode());
-            System.out.println("Request ID: " + ase.getRequestId());
+            logger.info("Caught Exception: " + ase.getMessage());
+            logger.info("Reponse Status Code: " + ase.getStatusCode());
+            logger.info("Error Code: " + ase.getErrorCode());
+            logger.info("Request ID: " + ase.getRequestId());
         }
         return null;
 
     }
 
     public void sendMessage(String message) {
-        sqs.sendMessage(new SendMessageRequest(queueUrl, message));
-        System.out.println(String.format("Sending message '%s' to queue with url - %s.", message, queueUrl));
+        sqs.sendMessage(new SendMessageRequest(processedUrl, message));
+        logger.info(String.format("Sending message '%s' to queue with url - %s.", message, processedUrl));
     }
 
     public void deleteMessage(Message message) {
-        sqs.deleteMessage(new DeleteMessageRequest(queueUrl, message.getReceiptHandle()));
+        sqs.deleteMessage(new DeleteMessageRequest(unprocessedUrl, message.getReceiptHandle()));
     }
-
 
     //-----------------------------MessageProcess------------------------------
 
     public String processReview(String review) {
+
         String toReturn = review.substring(review.indexOf("{"));
         int rating = findRating(toReturn);
         int sentiment = findSentiment(findText(toReturn));
@@ -199,37 +222,5 @@ public class Worker {
         if (str.charAt(str.length() - 1) == ',')
             str = str.substring(0, str.length() - 1);
         return str + "]";
-    }
-
-    public String tempProcessReview(String review) {//TODO delete
-        String toReturn = review.substring(review.indexOf("{"));
-        int sentiment = new Random().nextInt(5);
-        int rating = findRating(toReturn);
-        //coloring review
-        switch (sentiment) {
-            case 0: {
-                toReturn = "<font color=#930000>" + toReturn + "</font>";
-                break;
-            }
-            case 1: {
-                toReturn = "<font color=#FF0000>" + toReturn + "</font>";
-                break;
-            }
-            case 2: {
-                toReturn = "<font color=#000000>" + toReturn + "</font>";
-                break;
-            }
-            case 3: {
-                toReturn = "<font color=#0FFF00>" + toReturn + "</font>";
-                break;
-            }
-            case 4: {
-                toReturn = "<font color=#088300>" + toReturn + "</font>";
-                break;
-            }
-        }
-
-        int sarcastic = rating - sentiment;
-        return sarcastic > 3 ? toReturn + " sarcastic\n" : toReturn + " not_sarcastic\n";
     }
 }

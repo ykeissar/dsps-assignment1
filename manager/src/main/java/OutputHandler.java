@@ -9,23 +9,29 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class OutputHandler implements Runnable {
-    private String queueUrl;
+    private String processedUrl;
+    private String unprocessedUrl;
     private Manager manager;
     private ExecutorService readersPool = Executors.newCachedThreadPool();
     private AtomicReference<String> output = new AtomicReference<String>("");
     private int id;
+    private int appId;
     private AtomicInteger currentMessageCount = new AtomicInteger(0);
     private int expectedMessageCount;
     private Map<Integer, Boolean> messagesProcessed;
     private List<Instance> workers;
+    private int numOfWorkers;
 
-    public OutputHandler(String queueUrl, Manager manager, int id, int count, Map<Integer, Boolean> messagesProcessed, List<Instance> workers) {
-        this.queueUrl = queueUrl;
+    public OutputHandler(String processedUrl, String unprocessedUrl, Manager manager, int id, int count, Map<Integer, Boolean> messagesProcessed, List<Instance> workers, int numOfWorkers, int appId) {
+        this.processedUrl = processedUrl;
+        this.unprocessedUrl = unprocessedUrl;
         this.manager = manager;
         this.id = id;
         expectedMessageCount = count;
         this.messagesProcessed = messagesProcessed;
-        this.workers=workers;
+        this.workers = workers;
+        this.numOfWorkers = numOfWorkers;
+        this.appId = appId;
     }
 
     public void run() {
@@ -33,26 +39,28 @@ public class OutputHandler implements Runnable {
         Message message;
 
         do {
-            message = manager.readMessagesLookForFirstLine("PROCESSED", queueUrl);
-            if(message != null) {
+            message = manager.readMessagesLookForFirstLine("PROCESSED", processedUrl);
+            if (message != null) {
                 int id = Integer.parseInt(message.getBody().substring(10, message.getBody().indexOf("\n", 10)));
                 if (!messagesProcessed.get(id)) {
-                    readersPool.execute(new OutputProcessor(queueUrl, manager, output, message, currentMessageCount));
+                    readersPool.execute(new OutputProcessor(processedUrl, manager, output, message, currentMessageCount));
                     messagesProcessed.put(id, true);
-                    System.out.println("Input n. "+this.id+", Review n. "+id+" processed. ("+(currentMessageCount.get()+1)+"/"+expectedMessageCount+")");
-                }
-                else
-                    manager.deleteMessage(message, queueUrl);
+                    manager.log("AppId " + appId + " Input n. " + this.id + ", Review n. " + id + " processed. (" + (currentMessageCount.get() + 1) + "/" + expectedMessageCount + ")");
+                } else
+                    manager.deleteMessage(message, processedUrl);
 
             }
-
+            if (workers.size() < numOfWorkers) {
+                workers.addAll(manager.runNWorkers(processedUrl, unprocessedUrl, numOfWorkers - workers.size(), appId, this.id));
+            }
         } while (currentMessageCount.get() < expectedMessageCount);
 
         //uploading
-        manager.uploadOutputFile(manager.getBucketName(id), output.get(), id);
+        manager.uploadOutputFile(manager.getBucketName(id), output.get(), id, appId);
 
         manager.shutdownWorkers(workers);
-        manager.deleteQueue(queueUrl);
+        manager.deleteQueue(processedUrl);
+        manager.deleteQueue(unprocessedUrl);
         readersPool.shutdown();
     }
 }
